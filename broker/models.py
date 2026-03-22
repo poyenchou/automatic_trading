@@ -25,9 +25,8 @@ class AccountInfo(BaseModel):
 
 class ScannerRow(BaseModel):
     symbol: str
-    pct_change: float = Field(0.0, alias="percent_change")
-    price: float = 0.0
     volume: float = 0.0
+    trade_count: int = 0
 
     model_config = {"populate_by_name": True}
 

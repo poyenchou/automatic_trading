@@ -1,5 +1,5 @@
 """
-Smoke test — verify the broker layer works against the live Alpaca API.
+Smoke test — verify the broker and market data layers work against the live Alpaca API.
 
 PREREQUISITES
 ─────────────
@@ -21,6 +21,9 @@ USAGE
 """
 
 import sys
+from datetime import datetime, timedelta, timezone
+
+import mplfinance as mpf
 
 sys.path.insert(0, ".")
 
@@ -29,6 +32,8 @@ from broker.client import AlpacaClient
 from broker.exceptions import AuthError, BrokerError
 from config.settings import Settings
 from logging_config.setup import configure_logging
+from market_data.history import HistoricalDataFetcher
+from market_data.screener import TopMoversScreener
 
 
 def ok(msg: str) -> None:
@@ -49,7 +54,7 @@ def main() -> None:
     settings = Settings()
     configure_logging(level="WARNING", fmt="console")  # suppress debug noise
 
-    print("\nAlpaca Broker Layer — Smoke Test")
+    print("\nAlpaca Trading Bot — Smoke Test")
     print(f"Trading URL: {settings.alpaca_trading_url}")
 
     # ── 1. Credentials ───────────────────────────────────────────────────────
@@ -71,32 +76,48 @@ def main() -> None:
     except BrokerError as exc:
         fail(f"get_account failed: {exc}")
 
-    # ── 2. Top movers ─────────────────────────────────────────────────────────
-    section("2 / Top movers")
+    # ── 2. Screener (market data layer) ──────────────────────────────────────
+    section("2 / Screener  [market_data.screener]")
     first_symbol: str = ""
+    screener = TopMoversScreener(client=client, settings=settings)
     try:
-        rows = client.get_top_movers(top=5)
-        ok(f"Received {len(rows)} rows")
-        for r in rows:
-            print(f"       {r.symbol:<6}  pct={r.pct_change:+.2f}%  price={r.price}")
-        if rows:
-            first_symbol = rows[0].symbol
+        results = screener.get_top_movers()
+        ok(f"Received {len(results)} ScreenerResults")
+        for r in results:
+            print(f"       {r.symbol:<6}  volume={r.volume:,.0f}")
+        if results:
+            first_symbol = results[0].symbol
     except BrokerError as exc:
         fail(f"get_top_movers failed: {exc}")
 
-    # ── 3. Historical bars ────────────────────────────────────────────────────
-    section("3 / Historical bars")
+    # ── 3. Historical bars (market data layer) ────────────────────────────────
+    section("3 / Historical bars  [market_data.history]")
+    df = None
+    fetcher = HistoricalDataFetcher(client=client)
     if not first_symbol:
-        print("  (skipped — no symbol from top movers)")
+        print("  (skipped — no symbol from screener)")
     else:
         try:
-            bars = client.get_historical_bars(first_symbol, timeframe="5Min", limit=50)
-            ok(f"{first_symbol} — {len(bars)} bars (5Min)")
-            if bars:
-                b = bars[-1]
-                print(f"       last bar  o={b.open}  h={b.high}  l={b.low}  c={b.close}  v={b.volume}")
-        except BrokerError as exc:
-            fail(f"get_historical_bars failed: {exc}")
+            # Go back 7 days to guarantee we cover at least 5 trading days,
+            # so the chart works on weekends when today has no data yet.
+            start = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            df = fetcher.fetch_bars(first_symbol, timeframe="5Min", start=start, limit=50)
+            ok(f"{first_symbol} — {len(df)} bars  (5Min, last 7 days)")
+            ok(f"DataFrame schema: index={df.index.dtype}, columns={list(df.columns)}")
+            print(df.tail())
+        except (BrokerError, ValueError) as exc:
+            fail(f"fetch_bars failed: {exc}")
+
+    # ── 4. Chart ──────────────────────────────────────────────────────────────
+    section("4 / Chart")
+    if df is None or df.empty:
+        print("  (skipped — no bars to plot)")
+    else:
+        # mplfinance requires capitalised column names
+        plot_df = df.rename(columns=str.capitalize)
+        print(plot_df.head())
+        ok(f"Opening candlestick chart for {first_symbol}…")
+        mpf.plot(plot_df, type="candle", volume=True, title=f"{first_symbol} — 5Min (last 7 days)", style="charles")
 
     # ── Done ──────────────────────────────────────────────────────────────────
     print(f"\n{'─' * 50}")

@@ -44,12 +44,11 @@ tests/          → pytest unit tests with mocked httpx (respx)
 - `tests/test_auth.py`, `tests/test_client.py` — 13 tests, all passing
 - `scripts/smoke_test.py`
 
-### PHASE 3 — Market Data
-Create:
-- `market_data/screener.py` — `TopMoversScreener.get_top_movers()` using `client.get_top_movers()`
-- `market_data/history.py` — `HistoricalDataFetcher.fetch_bars()` returning `pd.DataFrame`
-- `market_data/models.py` — `ScreenerResult` dataclass
-- `tests/test_screener.py`, `tests/test_history.py`
+### PHASE 3 — Market Data ✅ DONE
+- `market_data/models.py` — `ScreenerResult` frozen dataclass (`symbol`, `volume`)
+- `market_data/screener.py` — `TopMoversScreener.get_top_movers()` → `list[ScreenerResult]`
+- `market_data/history.py` — `HistoricalDataFetcher.fetch_bars()` → `pd.DataFrame` (UTC DatetimeIndex, float64 OHLCV columns)
+- `tests/test_screener.py`, `tests/test_history.py` — 18 tests, all passing
 
 ### PHASE 4 — Indicators
 Create:

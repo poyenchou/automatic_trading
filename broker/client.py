@@ -50,16 +50,18 @@ class AlpacaClient:
     # Screener
     # ------------------------------------------------------------------
 
-    def get_top_movers(self, top: int = 20) -> list[ScannerRow]:
+    def get_top_movers(self, top: int = 20) -> tuple[list[ScannerRow], str]:
         """
         GET /v1beta1/screener/stocks/most-actives?by=volume&top=N
-        Returns the most active stocks by volume.
+        Returns (rows, last_updated) where last_updated is an ISO 8601 string.
         """
         data = self._get_data(
             "/v1beta1/screener/stocks/most-actives",
             params={"by": "volume", "top": top},
         )
-        return [ScannerRow(**row) for row in data.get("most_actives", [])]
+        rows = [ScannerRow(**row) for row in data.get("most_actives", [])]
+        last_updated = data.get("last_updated", "")
+        return rows, last_updated
 
     # ------------------------------------------------------------------
     # Historical bars
@@ -84,7 +86,7 @@ class AlpacaClient:
         if end:
             params["end"] = end
         data = self._get_data(f"/v2/stocks/{symbol}/bars", params=params)
-        return [OHLCVBar(**bar) for bar in data.get("bars", [])]
+        return [OHLCVBar(**bar) for bar in data.get("bars") or []]
 
     # ------------------------------------------------------------------
     # HTTP primitives

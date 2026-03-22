@@ -106,18 +106,20 @@ def test_get_top_movers(client, settings):
             200,
             json={
                 "most_actives": [
-                    {"symbol": "AAPL", "volume": 50_000_000, "price": 178.5, "percent_change": 1.83},
-                    {"symbol": "TSLA", "volume": 30_000_000, "price": 250.0, "percent_change": -0.5},
-                ]
+                    {"symbol": "AAPL", "volume": 50_000_000, "trade_count": 234567},
+                    {"symbol": "TSLA", "volume": 30_000_000, "trade_count": 123456},
+                ],
+                "last_updated": "2026-03-20T23:59:00Z",
             },
         )
     )
-    rows = client.get_top_movers(top=2)
+    rows, last_updated = client.get_top_movers(top=2)
     assert len(rows) == 2
     assert isinstance(rows[0], ScannerRow)
     assert rows[0].symbol == "AAPL"
-    assert rows[0].pct_change == 1.83
-    assert rows[0].price == 178.5
+    assert rows[0].volume == 50_000_000
+    assert rows[0].trade_count == 234567
+    assert last_updated == "2026-03-20T23:59:00Z"
 
 
 # ---------------------------------------------------------------------------
