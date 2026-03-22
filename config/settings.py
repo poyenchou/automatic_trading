@@ -8,12 +8,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Gateway
-    gateway_url: str = "https://localhost:5000/v1/api"
-    gateway_verify_ssl: bool = False
-
-    # Account
-    ibkr_account_id: str = ""
+    # Alpaca API
+    alpaca_api_key: str = ""
+    alpaca_api_secret: str = ""
+    alpaca_trading_url: str = "https://paper-api.alpaca.markets"
+    alpaca_data_url: str = "https://data.alpaca.markets"
 
     # Safety
     paper_trading: bool = True

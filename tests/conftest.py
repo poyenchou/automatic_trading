@@ -8,9 +8,10 @@ from config.settings import Settings
 def settings() -> Settings:
     """Settings instance with safe test defaults (no .env required)."""
     return Settings(
-        gateway_url="https://localhost:5000/v1/api",
-        gateway_verify_ssl=False,
-        ibkr_account_id="DU123456",
+        alpaca_api_key="TESTKEY123",
+        alpaca_api_secret="TESTSECRET456",
+        alpaca_trading_url="https://paper-api.alpaca.markets",
+        alpaca_data_url="https://data.alpaca.markets",
         paper_trading=True,
         num_movers=5,
         rsi_period=14,
