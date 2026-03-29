@@ -52,19 +52,45 @@ tests/          → pytest unit tests with mocked httpx (respx)
 
 ### PHASE 4 — Indicators
 Create:
-- `strategy/signals.py` — pure functions: `rsi()`, `ema()`, `macd()`
+- `strategy/signals.py` — pure indicator functions (two groups, see below)
 - `strategy/models.py` — `Direction`, `SignalResult` dataclasses
 - `tests/test_signals.py` — pure math tests, no mocking needed
 
 No broker imports allowed in this phase.
 
+#### Group 1 — General Momentum Indicators
+Standard technical indicators, not tied to any specific strategy:
+- `rsi(series, period)` → `pd.Series` — Relative Strength Index
+- `ema(series, period)` → `pd.Series` — Exponential Moving Average
+- `macd(series, fast, slow, signal)` → `tuple[pd.Series, pd.Series, pd.Series]` — MACD line, signal line, histogram
+
+#### Group 2 — Ross Cameron "First Dip" Indicators
+Implements the Gap & Go / First Pullback setup described at:
+https://www.youtube.com/watch?v=oxob0x0Xz7s
+Entry logic: stock gaps up → initial surge → first pullback to VWAP or 9 EMA → bounce = buy signal.
+- `vwap(df)` → `pd.Series` — anchored VWAP from the first bar of the session (pass today's bars only — resets each session)
+- `gap_percent(open, prev_close)` → `float` — pre-market gap size: `(open - prev_close) / prev_close`
+- `relative_volume(df, lookback_bars)` → `float` — current bar volume vs rolling average (catalyst filter)
+- `first_dip_signal(df, ema_period)` → `bool` — detects: gap up → surge above VWAP → first pullback to VWAP or 9 EMA → price reclaims level
+- `in_prime_window(ts, tz)` → `bool` — True if bar falls within 9:30–10:30 AM ET (Ross Cameron's prime window)
+- `opening_range_breakout(df, range_bars)` → `bool` — True if current bar closes above the high of the first N bars (alternative entry to first dip)
+
+Float filter (separate from signals, lives in `market_data/`):
+- `market_data/float_filter.py` — `FloatFetcher`: fetches public float via yfinance; `is_low_float(symbol, max_float=20M)` → `bool`
+- Note: Alpaca does not provide float data; yfinance is used as a secondary data source for this one field
+
 ### PHASE 5 — Strategy
 Create:
-- `strategy/momentum.py` — `MomentumStrategy(Strategy)`: RSI + MACD + EMA trend filter
 - `strategy/base.py` — abstract `Strategy` base class
+- `strategy/momentum.py` — `MomentumStrategy(Strategy)`: uses **Group 1** indicators (RSI + MACD + EMA trend filter)
+- `strategy/first_dip.py` — `FirstDipStrategy(Strategy)`: uses **Group 2** indicators (Ross Cameron Gap & Go setup)
+  - Pre-market gate: `gap_percent > 10%` AND `is_low_float` AND `relative_volume > 2x`
+  - Entry: `first_dip_signal` OR `opening_range_breakout`, only within `in_prime_window` (9:30–10:30 AM ET)
+  - Requires both `df` (30 days, for relative_volume lookback) and `today_df` (session only, for VWAP/first_dip)
 - `tests/test_momentum_strategy.py`
+- `tests/test_first_dip_strategy.py`
 
-Output: `SignalResult` with direction `BUY` or `NONE`.
+Output of both strategies: `SignalResult` with direction `BUY` or `NONE`.
 
 ### PHASE 6 — Execution
 Create:
@@ -112,6 +138,7 @@ Create:
 | `pydantic-settings>=2.2` | `.env`-backed settings |
 | `structlog>=24.0` | JSON structured logging |
 | `pandas>=2.2` | OHLCV DataFrame + TA |
+| `yfinance>=0.2` | Fetch float shares (not available via Alpaca) |
 | `respx>=0.21` | Mock httpx in tests |
 | `pytest>=8.0` | Test runner |
 
