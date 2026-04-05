@@ -64,6 +64,12 @@ class PositionMonitor:
             if position is None:
                 # Position is gone — one of the bracket orders fired
                 outcome = self._determine_outcome(state)
+                # Cancel whichever bracket order did NOT fill to avoid
+                # an orphaned order attempting to sell shares we no longer own
+                if outcome == "tp":
+                    self._cancel_order(state.stop_order_id)
+                else:
+                    self._cancel_order(state.tp_order_id)
                 log.info(
                     "position_monitor.closed",
                     symbol=state.symbol,
@@ -130,6 +136,15 @@ class PositionMonitor:
             return order.status not in ("filled", "canceled", "expired", "rejected")
         except BrokerError:
             return False
+
+    def _cancel_order(self, order_id: str) -> None:
+        """Cancel a bracket order, ignoring errors if it is already gone."""
+        try:
+            self._client.cancel_order(order_id)
+            log.info("position_monitor.bracket_cancelled", order_id=order_id)
+        except BrokerError as exc:
+            # Already filled, canceled, or expired — nothing to do
+            log.debug("position_monitor.bracket_cancel_skipped", order_id=order_id, reason=str(exc))
 
     def _close_manually(self, symbol: str) -> None:
         """Close a position at market as a safety fallback."""

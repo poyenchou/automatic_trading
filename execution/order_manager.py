@@ -57,7 +57,8 @@ class OrderManager:
             current_price: Current ask/last price used to estimate entry.
 
         Returns:
-            OrderRequest with qty, stop, and take-profit pre-calculated.
+            OrderRequest with qty computed from account equity.
+            Bracket prices (stop/TP) are computed later from the actual fill price.
         """
         account       = self._client.get_account()
         equity        = account.equity
@@ -67,25 +68,18 @@ class OrderManager:
         qty = int(risk_dollars / stop_distance)
         qty = max(1, min(qty, self._settings.max_shares))
 
-        stop_price        = round(current_price - stop_distance, 2)
-        take_profit_price = round(current_price + 2 * stop_distance, 2)
-
         log.info(
             "order_manager.build_order_request",
             symbol=symbol,
             equity=equity,
             risk_dollars=risk_dollars,
             qty=qty,
-            stop_price=stop_price,
-            take_profit_price=take_profit_price,
         )
 
         return OrderRequest(
             symbol=symbol,
             qty=qty,
             entry_price=current_price,
-            stop_price=stop_price,
-            take_profit_price=take_profit_price,
         )
 
     def execute(self, request: OrderRequest) -> PositionState:

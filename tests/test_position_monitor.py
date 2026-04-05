@@ -49,14 +49,23 @@ def _position(symbol: str = "X", current_price: float = 10.55) -> PositionRespon
 class TestPositionMonitorTP:
     def test_returns_tp_when_tp_order_filled(self):
         client = MagicMock()
-        # First poll: position gone → check orders → TP filled
         client.get_position.return_value = None
         client.get_order.side_effect = [
-            _order("tp-1", "filled"),   # TP check
+            _order("tp-1", "filled"),   # TP check in _determine_outcome
         ]
         monitor = PositionMonitor(client, poll_interval_seconds=0)
         result = monitor.monitor(_state())
         assert result == "tp"
+
+    def test_cancels_stop_order_when_tp_fills(self):
+        client = MagicMock()
+        client.get_position.return_value = None
+        client.get_order.side_effect = [
+            _order("tp-1", "filled"),
+        ]
+        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor.monitor(_state())
+        client.cancel_order.assert_called_once_with("stop-1")
 
     def test_returns_sl_when_stop_order_filled(self):
         client = MagicMock()
@@ -68,6 +77,27 @@ class TestPositionMonitorTP:
         monitor = PositionMonitor(client, poll_interval_seconds=0)
         result = monitor.monitor(_state())
         assert result == "sl"
+
+    def test_cancels_tp_order_when_stop_fills(self):
+        client = MagicMock()
+        client.get_position.return_value = None
+        client.get_order.side_effect = [
+            _order("tp-1",   "canceled"),
+            _order("stop-1", "filled"),
+        ]
+        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor.monitor(_state())
+        client.cancel_order.assert_called_once_with("tp-1")
+
+    def test_cancel_failure_does_not_raise(self):
+        """If the order is already gone, cancel_order raises — should be swallowed."""
+        client = MagicMock()
+        client.get_position.return_value = None
+        client.get_order.side_effect = [_order("tp-1", "filled")]
+        client.cancel_order.side_effect = BrokerError("already gone")
+        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        result = monitor.monitor(_state())   # must not raise
+        assert result == "tp"
 
 
 class TestPositionMonitorStillOpen:

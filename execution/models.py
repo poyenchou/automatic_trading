@@ -11,12 +11,15 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class OrderRequest:
-    """Describes an order we want to place."""
+    """Describes an order we want to place.
+
+    stop_price and take_profit_price are intentionally absent — they cannot
+    be known before the market order fills.  OrderManager.execute() recomputes
+    them from the actual fill price before placing the bracket orders.
+    """
     symbol: str
-    qty: int                  # whole shares
-    entry_price: float        # expected fill price (used to compute TP/SL)
-    stop_price: float         # stop-loss trigger price
-    take_profit_price: float  # take-profit limit price
+    qty: int           # whole shares
+    entry_price: float # pre-fill estimate; used only as fallback if fill price is unavailable
 
 
 @dataclass(frozen=True)

@@ -88,18 +88,11 @@ class TestBuildOrderRequest:
         req = om.build_order_request("X", current_price=10.0)
         assert req.qty >= 1
 
-    def test_stop_price_is_below_entry(self):
+    def test_entry_price_preserved(self):
         client = _mock_client(equity=10_000.0)
-        om = OrderManager(client, _settings(stop_loss_cents=0.10))
+        om = OrderManager(client, _settings())
         req = om.build_order_request("X", current_price=10.0)
-        assert req.stop_price == pytest.approx(9.90)
-
-    def test_take_profit_is_2x_stop_distance(self):
-        client = _mock_client(equity=10_000.0)
-        om = OrderManager(client, _settings(stop_loss_cents=0.10))
-        req = om.build_order_request("X", current_price=10.0)
-        # TP = entry + 2 * 0.10 = 10.20
-        assert req.take_profit_price == pytest.approx(10.20)
+        assert req.entry_price == pytest.approx(10.0)
 
     def test_symbol_preserved(self):
         client = _mock_client()
@@ -112,16 +105,14 @@ class TestExecute:
     def test_places_market_order(self):
         client = _mock_client(fill_price=10.50)
         om = OrderManager(client, _settings())
-        req = OrderRequest(symbol="X", qty=100, entry_price=10.0,
-                           stop_price=9.90, take_profit_price=10.20)
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0)
         om.execute(req)
         client.place_market_order.assert_called_once_with("X", 100, side="buy")
 
     def test_places_stop_and_tp_after_fill(self):
         client = _mock_client(fill_price=10.50)
         om = OrderManager(client, _settings(stop_loss_cents=0.10))
-        req = OrderRequest(symbol="X", qty=100, entry_price=10.0,
-                           stop_price=9.90, take_profit_price=10.20)
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0)
         om.execute(req)
         client.place_stop_order.assert_called_once()
         client.place_limit_order.assert_called_once()
@@ -130,8 +121,7 @@ class TestExecute:
         # Fill at 10.50 → stop = 10.50 - 0.10 = 10.40
         client = _mock_client(fill_price=10.50)
         om = OrderManager(client, _settings(stop_loss_cents=0.10))
-        req = OrderRequest(symbol="X", qty=100, entry_price=10.0,
-                           stop_price=9.90, take_profit_price=10.20)
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0)
         state = om.execute(req)
         assert state.stop_price == pytest.approx(10.40)
 
@@ -139,16 +129,14 @@ class TestExecute:
         # Fill at 10.50 → TP = 10.50 + 2*0.10 = 10.70
         client = _mock_client(fill_price=10.50)
         om = OrderManager(client, _settings(stop_loss_cents=0.10))
-        req = OrderRequest(symbol="X", qty=100, entry_price=10.0,
-                           stop_price=9.90, take_profit_price=10.20)
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0)
         state = om.execute(req)
         assert state.take_profit_price == pytest.approx(10.70)
 
     def test_returns_position_state(self):
         client = _mock_client(fill_price=10.50)
         om = OrderManager(client, _settings())
-        req = OrderRequest(symbol="X", qty=100, entry_price=10.0,
-                           stop_price=9.90, take_profit_price=10.20)
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0)
         state = om.execute(req)
         assert isinstance(state, PositionState)
         assert state.symbol == "X"
