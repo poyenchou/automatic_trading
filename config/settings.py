@@ -6,6 +6,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Alpaca API
@@ -31,11 +32,15 @@ class Settings(BaseSettings):
     volume_spike_multiplier: float = 2.0
 
     # Risk management
-    take_profit_pct: float = 2.0
-    stop_loss_pct: float = 1.0
-    max_position_size_usd: float = 1000.0
+    # % of account equity to risk per trade (e.g. 0.01 = 1%)
+    risk_per_trade_pct: float = 0.01
+    # Fixed cents below entry price for stop loss (e.g. 0.10 = $0.10)
+    stop_loss_cents: float = 0.10
+    # Take profit uses 2:1 R/R — target = entry + 2 * stop_distance (not configurable)
+    # Maximum shares per order regardless of position sizing (safety cap)
+    max_shares: int = 1000
 
     # Operational
-    poll_interval_seconds: int = 30
+    poll_interval_seconds: int = 5
     log_level: str = "INFO"
     log_format: str = "json"

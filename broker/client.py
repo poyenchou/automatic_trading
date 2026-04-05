@@ -16,7 +16,7 @@ import structlog
 
 from broker.auth import AlpacaAuth
 from broker.exceptions import AuthError, GatewayError, OrderRejectedError, RateLimitError
-from broker.models import AccountInfo, OHLCVBar, ScannerRow
+from broker.models import AccountInfo, OHLCVBar, OrderResponse, PositionResponse, ScannerRow
 from config.settings import Settings
 
 log = structlog.get_logger(__name__)
@@ -87,6 +87,126 @@ class AlpacaClient:
             params["end"] = end
         data = self._get_data(f"/v2/stocks/{symbol}/bars", params=params)
         return [OHLCVBar(**bar) for bar in data.get("bars") or []]
+
+    # ------------------------------------------------------------------
+    # Orders
+    # ------------------------------------------------------------------
+
+    def place_market_order(self, symbol: str, qty: int, side: str = "buy") -> OrderResponse:
+        """
+        POST /v2/orders — place a market order.
+
+        Args:
+            symbol: Stock ticker.
+            qty:    Number of shares (whole shares only).
+            side:   "buy" or "sell".
+        """
+        body = {
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "type": "market",
+            "time_in_force": "day",
+        }
+        data = self._post_trading("/v2/orders", body=body)
+        return OrderResponse(**data)
+
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "day",
+    ) -> OrderResponse:
+        """
+        POST /v2/orders — place a limit order (used for take-profit).
+
+        Args:
+            symbol:        Stock ticker.
+            qty:           Number of shares.
+            limit_price:   Limit price.
+            side:          "buy" or "sell".
+            time_in_force: "day" or "gtc".
+        """
+        body = {
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "type": "limit",
+            "limit_price": str(round(limit_price, 2)),
+            "time_in_force": time_in_force,
+        }
+        data = self._post_trading("/v2/orders", body=body)
+        return OrderResponse(**data)
+
+    def place_stop_order(
+        self,
+        symbol: str,
+        qty: int,
+        stop_price: float,
+        side: str = "sell",
+        time_in_force: str = "day",
+    ) -> OrderResponse:
+        """
+        POST /v2/orders — place a stop order (used for stop-loss).
+
+        Args:
+            symbol:     Stock ticker.
+            qty:        Number of shares.
+            stop_price: Trigger price.
+            side:       "buy" or "sell".
+        """
+        body = {
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "type": "stop",
+            "stop_price": str(round(stop_price, 2)),
+            "time_in_force": time_in_force,
+        }
+        data = self._post_trading("/v2/orders", body=body)
+        return OrderResponse(**data)
+
+    def get_order(self, order_id: str) -> OrderResponse:
+        """GET /v2/orders/{order_id} — fetch current order state."""
+        data = self._get_trading(f"/v2/orders/{order_id}")
+        return OrderResponse(**data)
+
+    def cancel_order(self, order_id: str) -> None:
+        """DELETE /v2/orders/{order_id} — cancel an open order."""
+        time.sleep(0.1)
+        log.debug("http.delete", path=f"/v2/orders/{order_id}")
+        resp = self._trading_http.delete(f"/v2/orders/{order_id}")
+        if resp.status_code != 204:
+            self._handle_response(resp)
+
+    # ------------------------------------------------------------------
+    # Positions
+    # ------------------------------------------------------------------
+
+    def get_position(self, symbol: str) -> PositionResponse | None:
+        """
+        GET /v2/positions/{symbol} — fetch open position for a symbol.
+        Returns None if no position exists (404).
+        """
+        try:
+            data = self._get_trading(f"/v2/positions/{symbol}")
+            return PositionResponse(**data)
+        except Exception as exc:
+            if "404" in str(exc) or "position does not exist" in str(exc).lower():
+                return None
+            raise
+
+    def close_position(self, symbol: str) -> OrderResponse:
+        """
+        DELETE /v2/positions/{symbol} — close an open position at market.
+        """
+        time.sleep(0.1)
+        log.debug("http.delete", path=f"/v2/positions/{symbol}")
+        resp = self._trading_http.delete(f"/v2/positions/{symbol}")
+        data = self._handle_response(resp)
+        return OrderResponse(**data)
 
     # ------------------------------------------------------------------
     # HTTP primitives

@@ -203,8 +203,35 @@ def main() -> None:
         ok(f"Gap percent (session open vs prior close): {gap_pct * 100:.2f}%")
         ok(f"First dip signal:      {dip_signal}  (True = setup detected on last bar)")
 
-    # ── 5. Chart ──────────────────────────────────────────────────────────────
-    section("5 / Chart")
+    # ── 5. Strategies  [strategy layer] ───────────────────────────────────────
+    section("5 / Strategies  [strategy.momentum + strategy.first_dip]")
+    if df is None or df.empty:
+        print("  (skipped — no bars available)")
+    else:
+        from strategy.first_dip import FirstDipStrategy
+        from strategy.momentum import MomentumStrategy
+
+        idx_et    = df.index.tz_convert(ET)
+        last_date = idx_et.date.max()
+        today_df  = df[idx_et.date == last_date]
+
+        # ── MomentumStrategy ─────────────────────────────────────────────────
+        print("\n  MomentumStrategy (RSI + MACD + EMA)")
+        momentum  = MomentumStrategy()
+        m_result  = momentum.generate_signal(first_symbol, df, today_df)
+        arrow     = "→ BUY" if m_result.direction.value == "BUY" else "→ NONE"
+        ok(f"{arrow}  {m_result.reason}")
+
+        # ── FirstDipStrategy (no float filter in smoke test) ─────────────────
+        print("\n  FirstDipStrategy (Ross Cameron Gap & Go)")
+        print("  Note: float filter disabled in smoke test (no live API call)")
+        first_dip = FirstDipStrategy(float_fetcher=None)
+        fd_result = first_dip.generate_signal(first_symbol, df, today_df)
+        arrow     = "→ BUY" if fd_result.direction.value == "BUY" else "→ NONE"
+        ok(f"{arrow}  {fd_result.reason}")
+
+    # ── 6. Chart ──────────────────────────────────────────────────────────────
+    section("6 / Chart")
     if df is None or df.empty:
         print("  (skipped — no bars to plot)")
     else:

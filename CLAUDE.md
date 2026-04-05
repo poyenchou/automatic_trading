@@ -101,6 +101,13 @@ Create:
 
 No indicator logic in this layer.
 
+#### Execution Design Decisions
+- **Position sizing**: % of account equity (e.g. risk 1% of equity per trade)
+- **Stop loss**: fixed cents below entry (e.g. $0.10 below fill price), configured via `.env`
+- **Take profit**: 2:1 risk/reward ratio — target = entry + 2 × stop distance
+- **Entry order type**: market order (guarantees fill, accepts slippage)
+- **Paper-trading hard stop**: `OrderManager.__init__` asserts `settings.paper_trading is True`
+
 ### PHASE 7 — Workflow
 Create:
 - `orchestration/morning_workflow.py` — `MorningWorkflow.run()`:
