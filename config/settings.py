@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     macd_signal: int = 9
     volume_spike_multiplier: float = 2.0
 
+    # Stock filters
+    min_stock_price: float = 2.0   # skip penny stocks below this price
+
     # Risk management
     # % of account equity to risk per trade (e.g. 0.01 = 1%)
     risk_per_trade_pct: float = 0.01
@@ -42,5 +45,6 @@ class Settings(BaseSettings):
 
     # Operational
     poll_interval_seconds: int = 5
+    max_concurrent_positions: int = 2
     log_level: str = "INFO"
     log_format: str = "json"

@@ -108,15 +108,16 @@ No indicator logic in this layer.
 - **Entry order type**: market order (guarantees fill, accepts slippage)
 - **Paper-trading hard stop**: `OrderManager.__init__` asserts `settings.paper_trading is True`
 
-### PHASE 7 — Workflow
+### PHASE 7 — Workflow ✅ DONE
 Create:
 - `orchestration/morning_workflow.py` — `MorningWorkflow.run()`:
-  1. Get top movers
-  2. Fetch historical data
-  3. Compute signals
-  4. Place orders
-  5. Monitor positions
-- `scripts/run_morning.py` — wires all deps via constructor injection, calls `workflow.run()`
+  1. Get top movers (screener)
+  2. Float filter — skip high-float symbols
+  3. Fetch 30 days of 5-min bars per symbol
+  4. Run both strategies — return first BUY signal per symbol
+  5. Place orders for up to `max_concurrent_positions` (default 2) BUY signals
+  6. Monitor all positions concurrently in parallel threads
+- `scripts/run_morning.py` — wires all deps via constructor injection, prints session summary
 
 ## Key Design Decisions
 - **Decoupling**: `strategy/` has zero imports from `broker/` or `execution/`

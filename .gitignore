@@ -28,3 +28,4 @@ logs/*.jsonl
 .idea/
 .vscode/
 *.swp
+logs/
