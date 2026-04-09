@@ -25,7 +25,7 @@ from config.settings import Settings
 from execution.models import PositionState
 from execution.order_manager import OrderManager
 from execution.position_monitor import PositionMonitor
-from market_data.float_filter import FloatFetcher
+from market_data.float_filter import DEFAULT_MAX_FLOAT, FloatFetcher
 from market_data.history import HistoricalDataFetcher
 from market_data.screener import TopMoversScreener
 from strategy.base import Strategy
@@ -77,7 +77,7 @@ class MorningWorkflow:
         # ── Step 1: Screener ──────────────────────────────────────────────
         log.info("workflow.screener.start")
         movers = self._screener.get_top_movers()
-        log.info("workflow.screener.done", count=len(movers))
+        log.info("workflow.screener.done", count=len(movers), symbols=[m.symbol for m in movers])
 
         buy_signals: list[tuple[str, SignalResult]] = []
 
@@ -86,11 +86,19 @@ class MorningWorkflow:
 
             # ── Step 2: Float filter ──────────────────────────────────────
             if self._float_fetcher is not None:
-                if not self._float_fetcher.is_low_float(symbol):
-                    log.info("workflow.float_filter.skip", symbol=symbol)
+                float_shares = self._float_fetcher.get_float_shares(symbol)
+                actual_str = f"{float_shares / 1_000_000:.1f}M" if float_shares is not None else "unknown"
+                if float_shares is None or float_shares > DEFAULT_MAX_FLOAT:
+                    log.info(
+                        "workflow.float_filter.skip",
+                        symbol=symbol,
+                        actual_float=actual_str,
+                        max_float=f"{DEFAULT_MAX_FLOAT / 1_000_000:.0f}M",
+                    )
                     results.append(TradeResult(
                         symbol=symbol, signal=_none_signal(symbol),
-                        outcome="skipped", reason="high float",
+                        outcome="skipped",
+                        reason=f"float {actual_str} above maximum {DEFAULT_MAX_FLOAT / 1_000_000:.0f}M shares",
                     ))
                     continue
 

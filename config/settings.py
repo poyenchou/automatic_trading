@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     paper_trading: bool = True
 
     # Screener
-    num_movers: int = 5
+    num_movers: int = 20
     exchange: str = "NYSE"
 
     # Strategy parameters
@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
-    volume_spike_multiplier: float = 2.0
+    volume_spike_multiplier: float = 1.5
 
     # Stock filters
-    min_stock_price: float = 2.0   # skip penny stocks below this price
+    min_stock_price: float = 1.5   # skip penny stocks below this price
 
     # Risk management
     # % of account equity to risk per trade (e.g. 0.01 = 1%)
