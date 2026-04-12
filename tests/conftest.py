@@ -14,7 +14,7 @@ def settings() -> Settings:
         alpaca_data_url="https://data.alpaca.markets",
         paper_trading=True,
         gap_min_pct=0.10,
-        min_daily_volume=100_000,
+        min_daily_volume=500_000,
         snapshot_batch_size=100,
         rsi_period=14,
         rsi_oversold=30.0,
