@@ -108,6 +108,10 @@ def main() -> None:
             print(f"  LOSS  {r.symbol:<6}  stop-loss hit")
         elif r.outcome == "manual":
             print(f"  EXIT  {r.symbol:<6}  closed manually (bracket orders missing)")
+        elif r.outcome == "timeout":
+            print(f"  EXIT  {r.symbol:<6}  monitor timeout — force-closed at market")
+        elif r.outcome == "error":
+            print(f"  ERR   {r.symbol:<6}  monitor thread crashed — check logs")
     print("─────────────────────────────────────────────────────────────────\n")
 
 

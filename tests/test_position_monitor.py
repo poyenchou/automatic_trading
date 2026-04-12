@@ -53,7 +53,7 @@ class TestPositionMonitorTP:
         client.get_order.side_effect = [
             _order("tp-1", "filled"),   # TP check in _determine_outcome
         ]
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         result = monitor.monitor(_state())
         assert result == "tp"
 
@@ -63,7 +63,7 @@ class TestPositionMonitorTP:
         client.get_order.side_effect = [
             _order("tp-1", "filled"),
         ]
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         monitor.monitor(_state())
         client.cancel_order.assert_called_once_with("stop-1")
 
@@ -74,7 +74,7 @@ class TestPositionMonitorTP:
             _order("tp-1",   "canceled"),  # TP not filled
             _order("stop-1", "filled"),    # SL filled
         ]
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         result = monitor.monitor(_state())
         assert result == "sl"
 
@@ -85,7 +85,7 @@ class TestPositionMonitorTP:
             _order("tp-1",   "canceled"),
             _order("stop-1", "filled"),
         ]
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         monitor.monitor(_state())
         client.cancel_order.assert_called_once_with("tp-1")
 
@@ -95,7 +95,7 @@ class TestPositionMonitorTP:
         client.get_position.return_value = None
         client.get_order.side_effect = [_order("tp-1", "filled")]
         client.cancel_order.side_effect = BrokerError("already gone")
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         result = monitor.monitor(_state())   # must not raise
         assert result == "tp"
 
@@ -115,7 +115,7 @@ class TestPositionMonitorStillOpen:
             _order("tp-1",   "new"),   # poll 2: TP alive
             _order("tp-1",   "filled"),# outcome check: TP filled
         ]
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         result = monitor.monitor(_state())
         assert result == "tp"
         assert client.get_position.call_count == 3
@@ -127,7 +127,7 @@ class TestPositionMonitorManualClose:
         # Position still open but both bracket orders missing
         client.get_position.return_value = _position()
         client.get_order.side_effect = BrokerError("not found")
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         result = monitor.monitor(_state())
         assert result == "manual"
         client.close_position.assert_called_once_with("X")
@@ -137,7 +137,29 @@ class TestPositionMonitorManualClose:
         client.get_position.return_value = _position()
         client.get_order.side_effect = BrokerError("not found")
         client.close_position.side_effect = BrokerError("close failed")
-        monitor = PositionMonitor(client, poll_interval_seconds=0)
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=3600)
         # Should not raise even if close_position fails
         result = monitor.monitor(_state())
         assert result == "manual"
+
+
+class TestPositionMonitorTimeout:
+    def test_returns_timeout_when_deadline_exceeded(self):
+        """Position never closes — monitor should exit with 'timeout' outcome."""
+        client = MagicMock()
+        # Position stays open forever; bracket orders always alive
+        client.get_position.return_value = _position()
+        client.get_order.return_value = _order("stop-1", "new")
+        # timeout_seconds=0 means the deadline is already past on first check
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=0)
+        result = monitor.monitor(_state())
+        assert result == "timeout"
+
+    def test_timeout_cancels_bracket_orders_and_closes_position(self):
+        client = MagicMock()
+        client.get_position.return_value = _position()
+        client.get_order.return_value = _order("stop-1", "new")
+        monitor = PositionMonitor(client, poll_interval_seconds=0, timeout_seconds=0)
+        monitor.monitor(_state())
+        assert client.cancel_order.call_count == 2
+        client.close_position.assert_called_once_with("X")

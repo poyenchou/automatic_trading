@@ -27,25 +27,34 @@ log = structlog.get_logger(__name__)
 
 
 class PositionMonitor:
-    def __init__(self, client: AlpacaClient, poll_interval_seconds: int = 30) -> None:
+    def __init__(
+        self,
+        client: AlpacaClient,
+        poll_interval_seconds: int = 30,
+        timeout_seconds: int = 14400,
+    ) -> None:
         self._client   = client
         self._interval = poll_interval_seconds
+        self._timeout  = timeout_seconds
 
     def monitor(self, state: PositionState) -> str:
         """
         Block until the position in `state` is fully closed.
 
         Polls Alpaca every `poll_interval_seconds` seconds. Returns a string
-        describing how the position was closed: "tp", "sl", or "manual".
+        describing how the position was closed: "tp", "sl", "manual", or "timeout".
 
         Args:
             state: PositionState returned by OrderManager.execute().
 
         Returns:
-            "tp"     — take-profit limit order filled
-            "sl"     — stop-loss order triggered
-            "manual" — position closed manually (bracket orders missing)
+            "tp"      — take-profit limit order filled
+            "sl"      — stop-loss order triggered
+            "manual"  — position closed manually (bracket orders missing)
+            "timeout" — monitor_timeout_seconds exceeded; position closed at market
         """
+        import time as _time
+        deadline = _time.monotonic() + self._timeout
         log.info(
             "position_monitor.start",
             symbol=state.symbol,
@@ -53,9 +62,10 @@ class PositionMonitor:
             entry=state.entry_price,
             stop=state.stop_price,
             tp=state.take_profit_price,
+            timeout_seconds=self._timeout,
         )
 
-        while True:
+        while _time.monotonic() < deadline:
             time.sleep(self._interval)
 
             # ── Check if position is still open ───────────────────────────
@@ -102,6 +112,17 @@ class PositionMonitor:
                 )
                 self._close_manually(state.symbol)
                 return "manual"
+
+        # Timeout exceeded — force-close to avoid holding overnight
+        log.error(
+            "position_monitor.timeout",
+            symbol=state.symbol,
+            timeout_seconds=self._timeout,
+        )
+        self._cancel_order(state.stop_order_id)
+        self._cancel_order(state.tp_order_id)
+        self._close_manually(state.symbol)
+        return "timeout"
 
     # ------------------------------------------------------------------
     # Helpers

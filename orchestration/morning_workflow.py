@@ -69,6 +69,7 @@ class MorningWorkflow:
         self._monitor       = PositionMonitor(
             client=client,
             poll_interval_seconds=settings.poll_interval_seconds,
+            timeout_seconds=settings.monitor_timeout_seconds,
         )
 
     def run(self) -> list[TradeResult]:
@@ -187,7 +188,11 @@ class MorningWorkflow:
         lock = threading.Lock()
 
         def _monitor_one(symbol: str, signal: SignalResult, state: PositionState) -> None:
-            outcome = self._monitor.monitor(state)
+            try:
+                outcome = self._monitor.monitor(state)
+            except Exception as exc:
+                log.error("workflow.monitor_crashed", symbol=symbol, error=str(exc))
+                outcome = "error"
             with lock:
                 trade_results.append(TradeResult(symbol=symbol, signal=signal, outcome=outcome))
 
