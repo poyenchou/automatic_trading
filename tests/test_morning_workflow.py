@@ -34,7 +34,8 @@ def _settings(**overrides) -> Settings:
         max_concurrent_positions=2,
         min_stock_price=2.0,
         poll_interval_seconds=0,
-        num_movers=5,
+        gap_min_pct=0.10,
+        snapshot_batch_size=100,
     )
     base.update(overrides)
     return Settings(**base)
@@ -104,7 +105,7 @@ def _make_workflow(
 
     # Mock screener
     wf._screener = MagicMock()
-    wf._screener.get_top_movers.return_value = movers or []
+    wf._screener.get_gappers.return_value = movers or []
 
     # Mock history fetcher
     wf._fetcher = MagicMock()
@@ -148,7 +149,7 @@ class TestNoMovers:
 class TestFloatFilter:
     def test_high_float_symbol_is_skipped(self):
         float_fetcher = MagicMock()
-        float_fetcher.is_low_float.return_value = False
+        float_fetcher.get_float_shares.return_value = 50_000_000  # above 20M threshold
         wf = _make_workflow(
             movers=[_screener_result("HIGH")],
             float_fetcher=float_fetcher,
@@ -158,7 +159,7 @@ class TestFloatFilter:
 
     def test_low_float_symbol_proceeds_to_signal(self):
         float_fetcher = MagicMock()
-        float_fetcher.is_low_float.return_value = True
+        float_fetcher.get_float_shares.return_value = 10_000_000  # below 20M threshold
         strategy = MagicMock()
         strategy.generate_signal.return_value = _none_signal("LOW")
         wf = _make_workflow(
@@ -180,32 +181,15 @@ class TestFloatFilter:
         wf.run()
         strategy.generate_signal.assert_called_once()
 
-
-# ── Price filter ──────────────────────────────────────────────────────────────
-
-class TestPriceFilter:
-    def test_penny_stock_is_skipped(self):
-        strategy = MagicMock()
-        strategy.generate_signal.return_value = _buy_signal("PENNY")
+    def test_unknown_float_symbol_is_skipped(self):
+        float_fetcher = MagicMock()
+        float_fetcher.get_float_shares.return_value = None  # yfinance returned no data
         wf = _make_workflow(
-            movers=[_screener_result("PENNY")],
-            bars=_make_bars(price=1.50),   # below min_stock_price=2.0
-            strategies=[strategy],
+            movers=[_screener_result("UNK")],
+            float_fetcher=float_fetcher,
         )
         results = wf.run()
-        assert any(r.symbol == "PENNY" and r.outcome == "skipped" for r in results)
-        strategy.generate_signal.assert_not_called()
-
-    def test_stock_above_minimum_proceeds_to_signal(self):
-        strategy = MagicMock()
-        strategy.generate_signal.return_value = _none_signal("OK")
-        wf = _make_workflow(
-            movers=[_screener_result("OK")],
-            bars=_make_bars(price=5.0),
-            strategies=[strategy],
-        )
-        wf.run()
-        strategy.generate_signal.assert_called_once()
+        assert any(r.symbol == "UNK" and r.outcome == "skipped" for r in results)
 
 
 # ── Signal evaluation ─────────────────────────────────────────────────────────

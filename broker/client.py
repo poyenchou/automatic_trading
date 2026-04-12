@@ -63,6 +63,30 @@ class AlpacaClient:
         last_updated = data.get("last_updated", "")
         return rows, last_updated
 
+    def get_assets(self) -> list[dict]:
+        """
+        GET /v2/assets — returns all active US equity assets.
+        Each asset dict includes at minimum: symbol, exchange, tradable.
+        """
+        return self._get_trading("/v2/assets", params={
+            "status": "active",
+            "asset_class": "us_equity",
+        })
+
+    def get_snapshots(self, symbols: list[str]) -> dict[str, dict]:
+        """
+        GET /v2/stocks/snapshots?symbols=SYM1,SYM2,...
+        Returns a dict keyed by symbol. Each value contains:
+          prevDailyBar: {o, h, l, c, v}  — previous session OHLCV
+          dailyBar:     {o, h, l, c, v}  — current session OHLCV
+          latestTrade:  {p, ...}          — most recent trade
+        """
+        data = self._get_data(
+            "/v2/stocks/snapshots",
+            params={"symbols": ",".join(symbols)},
+        )
+        return data if isinstance(data, dict) else {}
+
     # ------------------------------------------------------------------
     # Historical bars
     # ------------------------------------------------------------------

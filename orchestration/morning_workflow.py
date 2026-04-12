@@ -27,7 +27,7 @@ from execution.order_manager import OrderManager
 from execution.position_monitor import PositionMonitor
 from market_data.float_filter import DEFAULT_MAX_FLOAT, FloatFetcher
 from market_data.history import HistoricalDataFetcher
-from market_data.screener import TopMoversScreener
+from market_data.screener import GapScreener
 from strategy.base import Strategy
 from strategy.models import Direction, SignalResult
 
@@ -56,7 +56,7 @@ class MorningWorkflow:
         self._settings      = settings
         self._strategies    = strategies
         self._float_fetcher = float_fetcher
-        self._screener      = TopMoversScreener(client=client, settings=settings)
+        self._screener      = GapScreener(client=client, settings=settings)
         self._fetcher       = HistoricalDataFetcher(client=client)
         self._order_manager = OrderManager(client=client, settings=settings)
         self._monitor       = PositionMonitor(
@@ -76,7 +76,7 @@ class MorningWorkflow:
 
         # ── Step 1: Screener ──────────────────────────────────────────────
         log.info("workflow.screener.start")
-        movers = self._screener.get_top_movers()
+        movers = self._screener.get_gappers()
         log.info("workflow.screener.done", count=len(movers), symbols=[m.symbol for m in movers])
 
         buy_signals: list[tuple[str, SignalResult]] = []
@@ -104,7 +104,7 @@ class MorningWorkflow:
 
             # ── Step 3: Fetch history ─────────────────────────────────────
             log.info("workflow.history.fetch", symbol=symbol)
-            start = (datetime.now(timezone.utc) - timedelta(days=30)).strftime(
+            start = (datetime.now(timezone.utc) - timedelta(days=3)).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
             import pandas as pd
@@ -135,18 +135,7 @@ class MorningWorkflow:
                 ))
                 continue
 
-            # ── Step 4: Price filter — skip penny stocks ──────────────────
-            last_price = float(df["close"].iloc[-1])
-            if last_price < self._settings.min_stock_price:
-                log.info("workflow.price_filter.skip", symbol=symbol, price=last_price)
-                results.append(TradeResult(
-                    symbol=symbol, signal=_none_signal(symbol),
-                    outcome="skipped",
-                    reason=f"price ${last_price:.2f} below minimum ${self._settings.min_stock_price:.2f}",
-                ))
-                continue
-
-            # ── Step 5: Signals ───────────────────────────────────────────
+            # ── Step 4: Signals ───────────────────────────────────────────
             signal = self._evaluate_strategies(symbol, df, today_df)
             log.info(
                 "workflow.signal",
@@ -176,7 +165,7 @@ class MorningWorkflow:
             log.info("workflow.no_buy_signals")
             return results
 
-        # ── Step 6: Place orders ──────────────────────────────────────────
+        # ── Step 5: Place orders ──────────────────────────────────────────
         positions: list[tuple[str, SignalResult, PositionState]] = []
         for symbol, signal in buy_signals:
             try:
@@ -192,7 +181,7 @@ class MorningWorkflow:
                     outcome="skipped", reason=f"order failed: {exc}",
                 ))
 
-        # ── Step 7: Monitor positions concurrently ────────────────────────
+        # ── Step 6: Monitor positions concurrently ────────────────────────
         trade_results: list[TradeResult] = []
         lock = threading.Lock()
 

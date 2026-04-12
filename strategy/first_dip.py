@@ -3,15 +3,16 @@ First Dip Strategy — Ross Cameron Gap & Go / First Pullback setup.
 
 Entry logic (all conditions must be true):
   Pre-market gate (checked once per symbol):
-    1. Gap up > 10% vs prior session close
-    2. Low float (< 20M shares) — small float amplifies price moves
-    3. Relative volume > 2x — confirms a real catalyst, not a thin gap
+    1. Low float (< 20M shares) — small float amplifies price moves
+    2. Relative volume > 2x — confirms a real catalyst, not a thin gap
+
+  Note: gap up % is pre-filtered by GapScreener before this strategy runs.
 
   Intraday entry (checked on each new bar):
-    4. Within prime window: 9:30–10:30 AM ET
-    5. First dip signal OR opening range breakout
+    3. Within prime window: 9:30–10:30 AM ET
+    4. First dip signal OR opening range breakout
 
-If the float filter is not provided (None), condition 2 is skipped.
+If the float filter is not provided (None), condition 1 is skipped.
 No broker imports allowed in this module.
 """
 
@@ -28,6 +29,7 @@ from strategy.signals import (
     opening_range_breakout,
     relative_volume,
 )
+
 
 ET = ZoneInfo("America/New_York")
 
@@ -96,37 +98,31 @@ class FirstDipStrategy(Strategy):
         if today_df.empty:
             return none("no session bars available")
 
-        # ── Gate 1: Gap up ───────────────────────────────────────────────────
-        # Compare today's open to the last close of the prior session
-        today_dates  = today_df.index.tz_convert(ET).date
-        prior_df     = df[df.index.tz_convert(ET).date < today_dates.min()]
-        if prior_df.empty:
-            return none("no prior session data to compute gap")
+        # ── Gap % (informational only — pre-filtered by GapScreener) ────────
+        today_dates = today_df.index.tz_convert(ET).date
+        prior_df    = df[df.index.tz_convert(ET).date < today_dates.min()]
+        if not prior_df.empty:
+            open_price = today_df["open"].iloc[0]
+            prev_close = prior_df["close"].iloc[-1]
+            gap_pct    = gap_percent(open_price, prev_close)
+        else:
+            gap_pct = 0.0
 
-        open_price = today_df["open"].iloc[0]
-        prev_close = prior_df["close"].iloc[-1]
-        gap_pct    = gap_percent(open_price, prev_close)
-
-        if gap_pct < self._min_gap_pct:
-            return none(
-                f"gap {gap_pct * 100:.1f}% below minimum {self._min_gap_pct * 100:.0f}%"
-            )
-
-        # ── Gate 2: Low float ────────────────────────────────────────────────
+        # ── Gate 1: Low float ────────────────────────────────────────────────
         if self._float_fetcher is not None:
             if not self._float_fetcher.is_low_float(symbol, max_float=self._max_float):
                 return none(
                     f"float above {self._max_float:,} shares threshold"
                 )
 
-        # ── Gate 3: Relative volume ──────────────────────────────────────────
+        # ── Gate 2: Relative volume ──────────────────────────────────────────
         rel_vol = relative_volume(today_df, lookback_bars=20)
         if rel_vol < self._min_rel_vol:
             return none(
                 f"relative volume {rel_vol:.2f}x below minimum {self._min_rel_vol:.1f}x"
             )
 
-        # ── Gate 4: Prime window ─────────────────────────────────────────────
+        # ── Gate 3: Prime window ─────────────────────────────────────────────
         last_ts = today_df.index[-1]
         if not in_prime_window(last_ts, ET):
             return none(

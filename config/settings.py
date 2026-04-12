@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     paper_trading: bool = True
 
     # Screener
-    num_movers: int = 20
-    exchange: str = "NYSE"
+    gap_min_pct: float = 0.10          # minimum gap up % to qualify (0.10 = 10%)
+    snapshot_batch_size: int = 100     # symbols per Alpaca snapshots API call
 
     # Strategy parameters
     rsi_period: int = 14

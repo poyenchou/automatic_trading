@@ -95,20 +95,12 @@ class TestFirstDipStrategyNONECases:
         assert result.direction == Direction.NONE
         assert "no session bars" in result.reason
 
-    def test_no_prior_session_returns_none(self, strategy_no_float):
+    def test_no_prior_session_still_evaluates(self, strategy_no_float):
+        # With no prior bars, gap_pct defaults to 0.0 — strategy continues to other gates.
+        # Gap pre-filtering is now the screener's responsibility, not the strategy's.
         today_df = _make_df(_today_bars())
         result = strategy_no_float.generate_signal("X", today_df, today_df)
-        assert result.direction == Direction.NONE
-        assert "no prior session" in result.reason
-
-    def test_gap_too_small_returns_none(self, strategy_no_float, full_df):
-        # prev_close=10, open=10.5 → gap=5%, below 10% threshold
-        today_bars = [_bar(_ts("09:30"), 10.5, 11.0, 10.4, 10.8, 3_000_000.0)]
-        today_df = _make_df(today_bars)
-        df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
-        result = strategy_no_float.generate_signal("X", df, today_df)
-        assert result.direction == Direction.NONE
-        assert "gap" in result.reason
+        assert result.direction == Direction.NONE  # will fail on vol/window/signal, not gap
 
     def test_low_float_filter_fails_returns_none(self, full_df):
         strategy = FirstDipStrategy(
