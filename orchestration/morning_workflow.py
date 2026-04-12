@@ -104,7 +104,7 @@ class MorningWorkflow:
 
             # ── Step 3: Fetch history ─────────────────────────────────────
             log.info("workflow.history.fetch", symbol=symbol)
-            start = (datetime.now(timezone.utc) - timedelta(days=3)).strftime(
+            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
             import pandas as pd

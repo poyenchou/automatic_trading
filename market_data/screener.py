@@ -26,6 +26,22 @@ log = structlog.get_logger(__name__)
 
 _EXCHANGES = {"NASDAQ", "NYSE"}
 
+# Symbol suffixes that indicate non-common-stock instruments:
+# W = warrants, R = rights, U = units, P/PR = preferred shares,
+# WS = warrants (alternate suffix), WW = warrants
+_EXCLUDED_SUFFIXES = ("W", "R", "U", "WS", "WW")
+_EXCLUDED_CONTAINS = (".PR", ".WS", ".U", ".RT", ".WT")
+
+
+def _is_common_stock(symbol: str) -> bool:
+    """Return False for warrants, rights, units, and preferred shares."""
+    upper = symbol.upper()
+    if any(upper.endswith(s) for s in _EXCLUDED_SUFFIXES):
+        return False
+    if any(s in upper for s in _EXCLUDED_CONTAINS):
+        return False
+    return True
+
 
 class GapScreener:
     def __init__(self, client: AlpacaClient, settings: Settings) -> None:
@@ -45,7 +61,9 @@ class GapScreener:
         symbols = [
             a["symbol"]
             for a in assets
-            if a.get("exchange") in _EXCHANGES and a.get("tradable")
+            if a.get("exchange") in _EXCHANGES
+            and a.get("tradable")
+            and _is_common_stock(a["symbol"])
         ]
         log.info("screener.assets", total=len(symbols))
 
@@ -76,6 +94,9 @@ class GapScreener:
                     continue
 
                 if price is None or price < self._settings.min_stock_price:
+                    continue
+
+                if volume < self._settings.min_daily_volume:
                     continue
 
                 gappers.append(ScreenerResult(

@@ -12,6 +12,7 @@ Section 2 — Pipeline:   runs screener → float filter → history → signals
                         and prints what orders would be placed (no orders placed).
 """
 
+import argparse
 import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -129,12 +130,15 @@ def preflight(settings: Settings) -> AlpacaClient | None:
 
 # ── Section 2: Pipeline simulation ───────────────────────────────────────────
 
-def pipeline(client: AlpacaClient, settings: Settings) -> None:
+def pipeline(client: AlpacaClient, settings: Settings, limit: int | None = None) -> None:
     section("2 / Pipeline simulation  [DRY RUN — no orders placed]")
 
     account  = client.get_account()
     screener = GapScreener(client=client, settings=settings)
     movers   = screener.get_gappers()
+    if limit is not None:
+        movers = movers[:limit]
+        print(f"  (limited to first {limit} gappers via --limit)")
 
     fetcher       = HistoricalDataFetcher(client=client)
     float_fetcher = FloatFetcher()
@@ -176,7 +180,7 @@ def pipeline(client: AlpacaClient, settings: Settings) -> None:
 
         # Full history for signals
         try:
-            start = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
             df = fetcher.fetch_bars(symbol, timeframe="5Min", start=start, limit=2000)
             df.index = df.index.tz_convert(ET)
             df = df.between_time("09:30", "15:55")
@@ -223,6 +227,13 @@ def pipeline(client: AlpacaClient, settings: Settings) -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Alpaca Trading Bot — Pre-flight + Dry Run")
+    parser.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="Cap pipeline to first N gappers (useful for quick checks)",
+    )
+    args = parser.parse_args()
+
     settings = Settings()
     configure_logging(level="WARNING", fmt="console")
 
@@ -232,13 +243,15 @@ def main() -> None:
     print(f"  Max positions:  {settings.max_concurrent_positions}")
     print(f"  Risk per trade: {settings.risk_per_trade_pct * 100:.1f}% of equity")
     print(f"  Stop loss:      ${settings.stop_loss_cents:.2f}  |  Take profit: ${settings.stop_loss_cents * 2:.2f}")
+    if args.limit:
+        print(f"  Pipeline limit: {args.limit} gappers")
 
     client = preflight(settings)
     if client is None:
         print("\nPre-flight failed — fix the errors above before running the bot.")
         sys.exit(1)
 
-    pipeline(client, settings)
+    pipeline(client, settings, limit=args.limit)
 
 
 if __name__ == "__main__":

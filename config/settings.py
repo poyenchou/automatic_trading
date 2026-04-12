@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Screener
     gap_min_pct: float = 0.10          # minimum gap up % to qualify (0.10 = 10%)
+    min_daily_volume: int = 100_000    # minimum daily shares traded
     snapshot_batch_size: int = 100     # symbols per Alpaca snapshots API call
 
     # Strategy parameters

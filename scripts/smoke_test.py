@@ -239,7 +239,9 @@ def main() -> None:
         plot_df = df.rename(columns=str.capitalize)
         print(plot_df.head())
         ok(f"Opening candlestick chart for {first_symbol}…")
+        import matplotlib.pyplot as plt
         mpf.plot(plot_df, type="candle", volume=True, title=f"{first_symbol} — 5Min (last 30 days)", style="charles", warn_too_much_data=len(plot_df) + 1)
+        plt.show(block=False)
 
     # ── Done ─────────────────────────────────────────────────────────────────
     print(f"\n{'─' * 50}")
