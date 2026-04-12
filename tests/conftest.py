@@ -13,20 +13,32 @@ def settings() -> Settings:
         alpaca_trading_url="https://paper-api.alpaca.markets",
         alpaca_data_url="https://data.alpaca.markets",
         paper_trading=True,
+        # Screener
         gap_min_pct=0.10,
         min_daily_volume=500_000,
+        min_stock_price=1.5,
         snapshot_batch_size=100,
+        # Momentum strategy
         rsi_period=14,
         rsi_oversold=30.0,
         rsi_overbought=70.0,
         macd_fast=12,
         macd_slow=26,
         macd_signal=9,
-        volume_spike_multiplier=2.0,
-        take_profit_pct=2.0,
-        stop_loss_pct=1.0,
-        max_position_size_usd=1000.0,
+        # First Dip strategy
+        first_dip_min_rel_vol=2.0,
+        first_dip_max_float=20_000_000,
+        first_dip_ema_period=9,
+        first_dip_range_bars=1,
+        # Risk management
+        risk_per_trade_pct=0.01,
+        stop_loss_cents=0.10,
+        max_shares=1000,
+        # Operational
         poll_interval_seconds=30,
+        scan_interval_seconds=300,
+        monitor_exit_time="11:00",
+        max_concurrent_positions=2,
         log_level="INFO",
         log_format="console",
     )

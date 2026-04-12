@@ -63,14 +63,21 @@ def main() -> None:
     strategies = [
         FirstDipStrategy(
             float_fetcher=float_fetcher,
-            
-            min_rel_vol=2.0,
+            min_rel_vol=settings.first_dip_min_rel_vol,
+            max_float=settings.first_dip_max_float,
+            ema_period=settings.first_dip_ema_period,
+            range_bars=settings.first_dip_range_bars,
         ),
     ]
 
     # strategies = [
     #     MomentumStrategy(
+    #         rsi_period=settings.rsi_period,
     #         rsi_oversold=settings.rsi_oversold,
+    #         rsi_overbought=settings.rsi_overbought,
+    #         macd_fast=settings.macd_fast,
+    #         macd_slow=settings.macd_slow,
+    #         macd_signal=settings.macd_signal,
     #     ),
     # ]
 
