@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Operational
     poll_interval_seconds: int = 5
     scan_interval_seconds: int = 300    # seconds between signal rescans (default 5 min)
-    monitor_exit_time: str = "15:55"      # force-close all positions at this time ET (HH:MM)
+    monitor_exit_time: str = "11:00"      # force-close all positions at this time ET (HH:MM)
     max_concurrent_positions: int = 2
     log_level: str = "INFO"
     log_format: str = "json"
