@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Operational
     poll_interval_seconds: int = 5
+    scan_interval_seconds: int = 300    # seconds between signal rescans (default 5 min)
     max_concurrent_positions: int = 2
     log_level: str = "INFO"
     log_format: str = "json"

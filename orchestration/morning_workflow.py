@@ -2,20 +2,24 @@
 MorningWorkflow — wires all layers together for a single morning trading session.
 
 Run order:
-  1. Screener      — fetch top N movers by volume
-  2. Float filter  — skip high-float stocks
-  3. History       — fetch 30 days of 5-min bars per symbol
-  4. Signals       — run MomentumStrategy and FirstDipStrategy
-  5. Orders        — place entries for up to max_concurrent_positions BUY signals
-  6. Monitor       — watch all open positions concurrently until closed
+  1. Screener      — fetch gappers once at startup
+  2. Float filter  — skip high-float stocks once per symbol
+  3. Scan loop     — repeat every scan_interval_seconds until 10:30 AM ET:
+       a. Fetch fresh 5-min bars per candidate
+       b. Evaluate strategies — place order immediately on first BUY
+       c. Stop early once max_concurrent_positions are filled
+  4. Monitor       — watch all open positions concurrently until closed
 
-Concurrency: positions are monitored in parallel threads so one slow exit
-does not block the others.
+Screener and float filter run once because gap % and float don't change
+during the session. Bars and signals are re-fetched each scan so the
+strategy sees the latest price action as the first-dip pattern develops.
 """
 
 import threading
+import time as time_module
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -34,6 +38,9 @@ from strategy.models import Direction, SignalResult
 log = structlog.get_logger(__name__)
 
 ET = ZoneInfo("America/New_York")
+
+# FirstDipStrategy prime window closes at 10:30 AM ET
+_PRIME_WINDOW_CLOSE = dt_time(10, 30)
 
 
 @dataclass
@@ -68,23 +75,20 @@ class MorningWorkflow:
         """
         Execute the full morning workflow.
 
-        Returns a list of TradeResult — one per symbol that received a BUY
-        signal (up to max_concurrent_positions), plus skipped symbols with
-        their skip reason.
+        Returns a list of TradeResult — one per candidate symbol (skipped or
+        traded), plus monitoring outcomes for any positions that were opened.
         """
         results: list[TradeResult] = []
 
-        # ── Step 1: Screener ──────────────────────────────────────────────
+        # ── Step 1: Screener (once) ───────────────────────────────────────
         log.info("workflow.screener.start")
         movers = self._screener.get_gappers()
         log.info("workflow.screener.done", count=len(movers), symbols=[m.symbol for m in movers])
 
-        buy_signals: list[tuple[str, SignalResult]] = []
-
+        # ── Step 2: Float filter (once per symbol) ────────────────────────
+        candidates: list[str] = []
         for mover in movers:
             symbol = mover.symbol
-
-            # ── Step 2: Float filter ──────────────────────────────────────
             if self._float_fetcher is not None:
                 float_shares = self._float_fetcher.get_float_shares(symbol)
                 actual_str = f"{float_shares / 1_000_000:.1f}M" if float_shares is not None else "unknown"
@@ -101,87 +105,84 @@ class MorningWorkflow:
                         reason=f"float {actual_str} above maximum {DEFAULT_MAX_FLOAT / 1_000_000:.0f}M shares",
                     ))
                     continue
+            candidates.append(symbol)
 
-            # ── Step 3: Fetch history ─────────────────────────────────────
-            log.info("workflow.history.fetch", symbol=symbol)
-            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
-            import pandas as pd
-            df = self._fetcher.fetch_bars(symbol, timeframe="5Min", start=start, limit=2000)
-            if df.empty:
-                log.warning("workflow.history.empty", symbol=symbol)
-                results.append(TradeResult(
-                    symbol=symbol, signal=_none_signal(symbol),
-                    outcome="skipped", reason="no historical data",
-                ))
-                continue
+        if not candidates:
+            log.info("workflow.no_candidates")
+            return results
 
-            # Filter to regular market hours
-            df.index = df.index.tz_convert(ET)
-            df = df.between_time("09:30", "15:55")
-            df.index = df.index.tz_convert("UTC")
+        # ── Step 3: Scan loop ─────────────────────────────────────────────
+        # Rescan candidates every scan_interval_seconds until the prime
+        # window closes (10:30 AM ET) or max_concurrent_positions are filled.
+        positions: list[tuple[str, SignalResult, PositionState]] = []
+        traded: set[str] = set()        # symbols already ordered or permanently skipped
+        last_signal: dict[str, SignalResult] = {}
 
-            # Split into full history and today's session
-            idx_et     = df.index.tz_convert(ET)
-            last_date  = idx_et.date.max()
-            today_df   = df[idx_et.date == last_date]
-
-            if today_df.empty:
-                log.warning("workflow.history.no_today_bars", symbol=symbol)
-                results.append(TradeResult(
-                    symbol=symbol, signal=_none_signal(symbol),
-                    outcome="skipped", reason="no bars for current session",
-                ))
-                continue
-
-            # ── Step 4: Signals ───────────────────────────────────────────
-            signal = self._evaluate_strategies(symbol, df, today_df)
-            log.info(
-                "workflow.signal",
-                symbol=symbol,
-                direction=signal.direction.value,
-                reason=signal.reason,
-            )
-
-            if signal.direction == Direction.BUY:
-                buy_signals.append((symbol, signal))
-
-            if signal.direction != Direction.BUY:
-                results.append(TradeResult(
-                    symbol=symbol, signal=signal,
-                    outcome="skipped", reason=signal.reason,
-                ))
-
-            # Stop scanning once we have enough BUY signals
-            if len(buy_signals) >= self._settings.max_concurrent_positions:
-                log.info(
-                    "workflow.max_positions_reached",
-                    max=self._settings.max_concurrent_positions,
-                )
+        while self._prime_window_open():
+            if len(positions) >= self._settings.max_concurrent_positions:
+                log.info("workflow.max_positions_reached", max=self._settings.max_concurrent_positions)
                 break
 
-        if not buy_signals:
+            log.info("workflow.scan", time_et=datetime.now(ET).strftime("%H:%M ET"),
+                     candidates=len(candidates) - len(traded))
+
+            for symbol in candidates:
+                if symbol in traded:
+                    continue
+                if len(positions) >= self._settings.max_concurrent_positions:
+                    break
+
+                df, today_df = self._fetch_bars(symbol)
+                if df is None:
+                    continue
+
+                signal = self._evaluate_strategies(symbol, df, today_df)
+                last_signal[symbol] = signal
+                log.info("workflow.signal", symbol=symbol,
+                         direction=signal.direction.value, reason=signal.reason)
+
+                if signal.direction != Direction.BUY:
+                    continue
+
+                # BUY — place order immediately
+                try:
+                    current_price = float(df["close"].iloc[-1])
+                    request = self._order_manager.build_order_request(symbol, current_price)
+                    state   = self._order_manager.execute(request)
+                    positions.append((symbol, signal, state))
+                    traded.add(symbol)
+                    log.info("workflow.order_placed", symbol=symbol)
+                except Exception as exc:
+                    log.error("workflow.order_failed", symbol=symbol, error=str(exc))
+                    results.append(TradeResult(
+                        symbol=symbol, signal=signal,
+                        outcome="skipped", reason=f"order failed: {exc}",
+                    ))
+                    traded.add(symbol)
+
+            if len(positions) >= self._settings.max_concurrent_positions:
+                break
+
+            # Sleep until next scan, waking up no later than window close
+            sleep_secs = max(0.0, self._sleep_until_next_scan())
+            log.info("workflow.scan.sleep", seconds=int(sleep_secs))
+            time_module.sleep(sleep_secs)
+
+        # Symbols that never produced a BUY get a final skipped entry
+        for symbol in candidates:
+            if symbol not in traded:
+                sig = last_signal.get(symbol, _none_signal(symbol))
+                results.append(TradeResult(
+                    symbol=symbol, signal=sig,
+                    outcome="skipped",
+                    reason=sig.reason or "no signal during prime window",
+                ))
+
+        if not positions:
             log.info("workflow.no_buy_signals")
             return results
 
-        # ── Step 5: Place orders ──────────────────────────────────────────
-        positions: list[tuple[str, SignalResult, PositionState]] = []
-        for symbol, signal in buy_signals:
-            try:
-                current_price = self._get_current_price(symbol, df)
-                request = self._order_manager.build_order_request(symbol, current_price)
-                state   = self._order_manager.execute(request)
-                positions.append((symbol, signal, state))
-                log.info("workflow.order_placed", symbol=symbol)
-            except Exception as exc:
-                log.error("workflow.order_failed", symbol=symbol, error=str(exc))
-                results.append(TradeResult(
-                    symbol=symbol, signal=signal,
-                    outcome="skipped", reason=f"order failed: {exc}",
-                ))
-
-        # ── Step 6: Monitor positions concurrently ────────────────────────
+        # ── Step 4: Monitor positions concurrently ────────────────────────
         trade_results: list[TradeResult] = []
         lock = threading.Lock()
 
@@ -204,14 +205,54 @@ class MorningWorkflow:
         return results
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Helpers (extracted for testability)
     # ------------------------------------------------------------------
 
+    def _prime_window_open(self) -> bool:
+        """Return True if we are still within the 10:30 AM ET prime window."""
+        return datetime.now(ET).time() < _PRIME_WINDOW_CLOSE
+
+    def _sleep_until_next_scan(self) -> float:
+        """Seconds to sleep before next scan, capped at window close."""
+        now_et = datetime.now(ET)
+        window_close_dt = datetime.combine(now_et.date(), _PRIME_WINDOW_CLOSE, tzinfo=ET)
+        remaining = (window_close_dt - now_et).total_seconds()
+        return min(self._settings.scan_interval_seconds, remaining)
+
+    def _fetch_bars(self, symbol: str):
+        """Fetch 14 days of 5-min bars filtered to regular market hours.
+
+        Returns (df, today_df) or (None, None) on failure / empty data.
+        """
+        try:
+            start = (datetime.now(timezone.utc) - timedelta(days=14)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            df = self._fetcher.fetch_bars(symbol, timeframe="5Min", start=start, limit=2000)
+        except Exception as exc:
+            log.warning("workflow.history.fetch_failed", symbol=symbol, error=str(exc))
+            return None, None
+
+        if df.empty:
+            log.warning("workflow.history.empty", symbol=symbol)
+            return None, None
+
+        df.index = df.index.tz_convert(ET)
+        df = df.between_time("09:30", "15:55")
+        df.index = df.index.tz_convert("UTC")
+
+        idx_et    = df.index.tz_convert(ET)
+        last_date = idx_et.date.max()
+        today_df  = df[idx_et.date == last_date]
+
+        if today_df.empty:
+            log.warning("workflow.history.no_today_bars", symbol=symbol)
+            return None, None
+
+        return df, today_df
+
     def _evaluate_strategies(self, symbol: str, df, today_df) -> SignalResult:
-        """
-        Run all strategies and return the first BUY signal found.
-        If none fire, return the last NONE result.
-        """
+        """Run all strategies, return first BUY found or last NONE."""
         last_result = _none_signal(symbol)
         for strategy in self._strategies:
             result = strategy.generate_signal(symbol, df, today_df)
@@ -219,10 +260,6 @@ class MorningWorkflow:
             if result.direction == Direction.BUY:
                 return result
         return last_result
-
-    def _get_current_price(self, symbol: str, df) -> float:
-        """Use the last close price as a proxy for current price."""
-        return float(df["close"].iloc[-1])
 
 
 def _none_signal(symbol: str) -> SignalResult:

@@ -5,9 +5,13 @@ All broker calls and external dependencies are mocked — no network required.
 Strategy: MorningWorkflow creates its collaborators (_screener, _fetcher,
 _order_manager, _monitor) in __init__, so we mock them directly on the
 instance after construction rather than patching the classes.
+
+The scan loop calls _prime_window_open() to decide whether to keep scanning.
+Tests patch this method to return True once then False, so the loop runs
+exactly one iteration without any real sleeping.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -34,6 +38,7 @@ def _settings(**overrides) -> Settings:
         max_concurrent_positions=2,
         min_stock_price=2.0,
         poll_interval_seconds=0,
+        scan_interval_seconds=0,
         gap_min_pct=0.10,
         snapshot_batch_size=100,
     )
@@ -93,8 +98,9 @@ def _make_workflow(
     settings: Settings | None = None,
 ) -> MorningWorkflow:
     """
-    Build a MorningWorkflow with all internal collaborators mocked so no
-    network calls are made.
+    Build a MorningWorkflow with all internal collaborators mocked.
+    _prime_window_open() is patched to run the loop exactly once.
+    _sleep_until_next_scan() is patched to return 0 (no real sleeping).
     """
     wf = MorningWorkflow(
         client=_mock_client(),
@@ -107,7 +113,7 @@ def _make_workflow(
     wf._screener = MagicMock()
     wf._screener.get_gappers.return_value = movers or []
 
-    # Mock history fetcher
+    # Mock history fetcher — _fetch_bars() calls fetch_bars() internally
     wf._fetcher = MagicMock()
     wf._fetcher.fetch_bars.return_value = bars if bars is not None else _make_bars()
 
@@ -119,6 +125,10 @@ def _make_workflow(
     # Mock position monitor
     wf._monitor = MagicMock()
     wf._monitor.monitor.return_value = monitor_outcome
+
+    # Patch loop control: run exactly one scan iteration, no sleeping
+    wf._prime_window_open = MagicMock(side_effect=[True, False])
+    wf._sleep_until_next_scan = MagicMock(return_value=0)
 
     return wf
 
@@ -222,6 +232,41 @@ class TestSignalEvaluation:
         wf.run()
         s1.generate_signal.assert_called_once()
         s2.generate_signal.assert_called_once()
+
+
+# ── Scan loop rescan ──────────────────────────────────────────────────────────
+
+class TestScanLoop:
+    def test_rescans_until_signal_fires(self):
+        """Strategy returns NONE on first scan, BUY on second — both scans happen."""
+        strategy = MagicMock()
+        strategy.generate_signal.side_effect = [_none_signal("X"), _buy_signal("X")]
+        wf = _make_workflow(
+            movers=[_screener_result("X")],
+            strategies=[strategy],
+            monitor_outcome="tp",
+        )
+        # Allow two scan iterations
+        wf._prime_window_open = MagicMock(side_effect=[True, True, False])
+        results = wf.run()
+        assert strategy.generate_signal.call_count == 2
+        assert any(r.outcome == "tp" for r in results)
+
+    def test_already_traded_symbol_not_rescanned(self):
+        """After a BUY and order placement, the symbol is not re-evaluated next scan."""
+        strategy = MagicMock()
+        strategy.generate_signal.return_value = _buy_signal("X")
+        wf = _make_workflow(
+            movers=[_screener_result("X")],
+            strategies=[strategy],
+            monitor_outcome="tp",
+            settings=_settings(max_concurrent_positions=2),
+        )
+        # Two iterations available
+        wf._prime_window_open = MagicMock(side_effect=[True, True, False])
+        wf.run()
+        # Should only be called once even though two iterations ran
+        assert strategy.generate_signal.call_count == 1
 
 
 # ── Max concurrent positions ──────────────────────────────────────────────────
