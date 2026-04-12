@@ -16,6 +16,9 @@ position state returned by the broker.
 """
 
 import time
+from datetime import datetime
+from datetime import time as dt_time
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -25,17 +28,21 @@ from execution.models import PositionState
 
 log = structlog.get_logger(__name__)
 
+ET = ZoneInfo("America/New_York")
+
 
 class PositionMonitor:
     def __init__(
         self,
         client: AlpacaClient,
         poll_interval_seconds: int = 30,
+        exit_time_et: dt_time | None = None,
         timeout_seconds: int = 14400,
     ) -> None:
-        self._client   = client
-        self._interval = poll_interval_seconds
-        self._timeout  = timeout_seconds
+        self._client       = client
+        self._interval     = poll_interval_seconds
+        self._exit_time_et = exit_time_et   # wall-clock ET cutoff (production)
+        self._timeout      = timeout_seconds # duration fallback (tests)
 
     def monitor(self, state: PositionState) -> str:
         """
@@ -51,10 +58,15 @@ class PositionMonitor:
             "tp"      — take-profit limit order filled
             "sl"      — stop-loss order triggered
             "manual"  — position closed manually (bracket orders missing)
-            "timeout" — monitor_timeout_seconds exceeded; position closed at market
+            "timeout" — exit_time_et reached; position force-closed at market
         """
-        import time as _time
-        deadline = _time.monotonic() + self._timeout
+        if self._exit_time_et is not None:
+            now_et = datetime.now(ET)
+            exit_dt = datetime.combine(now_et.date(), self._exit_time_et, tzinfo=ET)
+            deadline = time.monotonic() + max(0.0, (exit_dt - now_et).total_seconds())
+        else:
+            deadline = time.monotonic() + self._timeout
+
         log.info(
             "position_monitor.start",
             symbol=state.symbol,
@@ -62,11 +74,11 @@ class PositionMonitor:
             entry=state.entry_price,
             stop=state.stop_price,
             tp=state.take_profit_price,
-            timeout_seconds=self._timeout,
+            exit_time_et=str(self._exit_time_et) if self._exit_time_et else None,
         )
 
-        while _time.monotonic() < deadline:
-            time.sleep(self._interval)
+        while time.monotonic() < deadline:
+            time.sleep(min(self._interval, max(0.0, deadline - time.monotonic())))
 
             # ── Check if position is still open ───────────────────────────
             position = self._client.get_position(state.symbol)

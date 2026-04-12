@@ -39,6 +39,7 @@ def _settings(**overrides) -> Settings:
         min_stock_price=2.0,
         poll_interval_seconds=0,
         scan_interval_seconds=0,
+        monitor_exit_time="15:55",
         gap_min_pct=0.10,
         snapshot_batch_size=100,
     )

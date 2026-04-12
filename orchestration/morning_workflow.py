@@ -22,6 +22,11 @@ from datetime import datetime, timedelta, timezone
 from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
+def _parse_time(s: str) -> dt_time:
+    """Parse 'HH:MM' into a datetime.time."""
+    h, m = s.split(":")
+    return dt_time(int(h), int(m))
+
 import structlog
 
 from broker.client import AlpacaClient
@@ -69,7 +74,7 @@ class MorningWorkflow:
         self._monitor       = PositionMonitor(
             client=client,
             poll_interval_seconds=settings.poll_interval_seconds,
-            timeout_seconds=settings.monitor_timeout_seconds,
+            exit_time_et=_parse_time(settings.monitor_exit_time),
         )
 
     def run(self) -> list[TradeResult]:
