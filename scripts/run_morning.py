@@ -63,7 +63,7 @@ def main() -> None:
     strategies = [
         FirstDipStrategy(
             float_fetcher=float_fetcher,
-            min_gap_pct=0.10,
+            
             min_rel_vol=2.0,
         ),
     ]

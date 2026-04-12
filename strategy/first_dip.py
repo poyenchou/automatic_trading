@@ -34,9 +34,8 @@ from strategy.signals import (
 ET = ZoneInfo("America/New_York")
 
 # Default thresholds
-MIN_GAP_PCT      = 0.10   # 10% gap up minimum
-MIN_REL_VOL      = 2.0    # 2x relative volume minimum
-MIN_BARS_TODAY   = 3      # need at least 3 bars for first_dip_signal
+MIN_REL_VOL    = 2.0   # 2x relative volume minimum
+MIN_BARS_TODAY = 3     # need at least 3 bars for first_dip_signal
 
 
 class FirstDipStrategy(Strategy):
@@ -50,7 +49,6 @@ class FirstDipStrategy(Strategy):
         float_fetcher: Optional FloatFetcher instance. If None, the low-float
                        filter is skipped (useful for testing or when float data
                        is unavailable).
-        min_gap_pct:   Minimum gap up as a fraction (default 0.10 = 10%).
         min_rel_vol:   Minimum relative volume multiplier (default 2.0).
         max_float:     Maximum float shares for low-float filter (default 20M).
         ema_period:    EMA period used as support line in first_dip_signal (default 9).
@@ -60,14 +58,12 @@ class FirstDipStrategy(Strategy):
     def __init__(
         self,
         float_fetcher=None,
-        min_gap_pct: float = MIN_GAP_PCT,
         min_rel_vol: float = MIN_REL_VOL,
         max_float: int = 20_000_000,
         ema_period: int = 9,
         range_bars: int = 1,
     ) -> None:
         self._float_fetcher = float_fetcher
-        self._min_gap_pct   = min_gap_pct
         self._min_rel_vol   = min_rel_vol
         self._max_float     = max_float
         self._ema_period    = ema_period

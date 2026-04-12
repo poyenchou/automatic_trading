@@ -16,7 +16,7 @@ import structlog
 
 from broker.auth import AlpacaAuth
 from broker.exceptions import AuthError, GatewayError, OrderRejectedError, RateLimitError
-from broker.models import AccountInfo, OHLCVBar, OrderResponse, PositionResponse, ScannerRow
+from broker.models import AccountInfo, OHLCVBar, OrderResponse, PositionResponse
 from config.settings import Settings
 
 log = structlog.get_logger(__name__)
@@ -49,19 +49,6 @@ class AlpacaClient:
     # ------------------------------------------------------------------
     # Screener
     # ------------------------------------------------------------------
-
-    def get_top_movers(self, top: int = 20) -> tuple[list[ScannerRow], str]:
-        """
-        GET /v1beta1/screener/stocks/most-actives?by=volume&top=N
-        Returns (rows, last_updated) where last_updated is an ISO 8601 string.
-        """
-        data = self._get_data(
-            "/v1beta1/screener/stocks/most-actives",
-            params={"by": "volume", "top": top},
-        )
-        rows = [ScannerRow(**row) for row in data.get("most_actives", [])]
-        last_updated = data.get("last_updated", "")
-        return rows, last_updated
 
     def get_assets(self) -> list[dict]:
         """

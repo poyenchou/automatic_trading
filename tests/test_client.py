@@ -9,7 +9,7 @@ import respx
 from broker.auth import AlpacaAuth
 from broker.client import AlpacaClient
 from broker.exceptions import AuthError, GatewayError, OrderRejectedError, RateLimitError
-from broker.models import AccountInfo, OHLCVBar, ScannerRow
+from broker.models import AccountInfo, OHLCVBar
 
 
 # ---------------------------------------------------------------------------
@@ -92,34 +92,6 @@ def test_get_account(client, settings):
     assert isinstance(account, AccountInfo)
     assert account.id == "PA123456"
     assert account.status == "ACTIVE"
-
-
-# ---------------------------------------------------------------------------
-# get_top_movers
-# ---------------------------------------------------------------------------
-
-
-@respx.mock
-def test_get_top_movers(client, settings):
-    respx.get(f"{settings.alpaca_data_url}/v1beta1/screener/stocks/most-actives").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "most_actives": [
-                    {"symbol": "AAPL", "volume": 50_000_000, "trade_count": 234567},
-                    {"symbol": "TSLA", "volume": 30_000_000, "trade_count": 123456},
-                ],
-                "last_updated": "2026-03-20T23:59:00Z",
-            },
-        )
-    )
-    rows, last_updated = client.get_top_movers(top=2)
-    assert len(rows) == 2
-    assert isinstance(rows[0], ScannerRow)
-    assert rows[0].symbol == "AAPL"
-    assert rows[0].volume == 50_000_000
-    assert rows[0].trade_count == 234567
-    assert last_updated == "2026-03-20T23:59:00Z"
 
 
 # ---------------------------------------------------------------------------

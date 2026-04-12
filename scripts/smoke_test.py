@@ -34,7 +34,7 @@ from broker.exceptions import AuthError, BrokerError
 from config.settings import Settings
 from logging_config.setup import configure_logging
 from market_data.history import HistoricalDataFetcher
-from market_data.screener import TopMoversScreener
+from market_data.screener import GapScreener
 from strategy.signals import ema, first_dip_signal, gap_percent, macd, relative_volume, rsi, vwap
 
 
@@ -84,16 +84,16 @@ def main() -> None:
     # ── 2. Screener (market data layer) ──────────────────────────────────────
     section("2 / Screener  [market_data.screener]")
     first_symbol: str = ""
-    screener = TopMoversScreener(client=client, settings=settings)
+    screener = GapScreener(client=client, settings=settings)
     try:
-        results = screener.get_top_movers()
-        ok(f"Received {len(results)} ScreenerResults")
+        results = screener.get_gappers()
+        ok(f"Received {len(results)} gappers")
         for r in results:
-            print(f"       {r.symbol:<6}  volume={r.volume:,.0f}")
+            print(f"       {r.symbol:<6}  gap={r.gap_pct * 100:.1f}%  volume={r.volume:,.0f}")
         if results:
             first_symbol = results[0].symbol
     except BrokerError as exc:
-        fail(f"get_top_movers failed: {exc}")
+        fail(f"get_gappers failed: {exc}")
 
     # ── 3. Historical bars (market data layer) ────────────────────────────────
     section("3 / Historical bars  [market_data.history]")

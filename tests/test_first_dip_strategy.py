@@ -79,7 +79,7 @@ def _today_bars(
 @pytest.fixture
 def strategy_no_float() -> FirstDipStrategy:
     """Strategy with float filter disabled."""
-    return FirstDipStrategy(float_fetcher=None, min_rel_vol=2.0, min_gap_pct=0.10)
+    return FirstDipStrategy(float_fetcher=None, min_rel_vol=2.0)
 
 
 @pytest.fixture
@@ -105,7 +105,6 @@ class TestFirstDipStrategyNONECases:
     def test_low_float_filter_fails_returns_none(self, full_df):
         strategy = FirstDipStrategy(
             float_fetcher=_mock_float_fetcher(is_low=False),
-            min_gap_pct=0.10,
             min_rel_vol=2.0,
         )
         today_bars = _today_bars(open_price=11.5)
@@ -116,7 +115,7 @@ class TestFirstDipStrategyNONECases:
         assert "float" in result.reason
 
     def test_low_relative_volume_returns_none(self, full_df):
-        strategy = FirstDipStrategy(float_fetcher=None, min_gap_pct=0.10, min_rel_vol=2.0)
+        strategy = FirstDipStrategy(float_fetcher=None,  min_rel_vol=2.0)
         # volume_mult=0.5 → rel_vol < 1x, well below 2x
         today_bars = _today_bars(open_price=11.5, volume_mult=0.5)
         today_df = _make_df(today_bars)
@@ -127,7 +126,7 @@ class TestFirstDipStrategyNONECases:
 
     def test_outside_prime_window_returns_none(self):
         # Use min_rel_vol=0 so relative volume gate passes, isolating the time check
-        strategy = FirstDipStrategy(float_fetcher=None, min_gap_pct=0.10, min_rel_vol=0.0)
+        strategy = FirstDipStrategy(float_fetcher=None,  min_rel_vol=0.0)
         today_bars = _today_bars(open_price=11.5, time_str="11:00")
         today_df = _make_df(today_bars)
         df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
@@ -154,7 +153,7 @@ class TestFirstDipStrategyReturnsSignalResult:
 
     def test_float_fetcher_none_skips_float_check(self):
         """Passing float_fetcher=None should not raise and should proceed past gate 2."""
-        strategy = FirstDipStrategy(float_fetcher=None, min_gap_pct=0.10, min_rel_vol=2.0)
+        strategy = FirstDipStrategy(float_fetcher=None,  min_rel_vol=2.0)
         today_bars = _today_bars(open_price=11.5)
         today_df = _make_df(today_bars)
         df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
@@ -164,7 +163,7 @@ class TestFirstDipStrategyReturnsSignalResult:
 
     def test_float_fetcher_is_called_with_symbol(self):
         ff = _mock_float_fetcher(is_low=True)
-        strategy = FirstDipStrategy(float_fetcher=ff, min_gap_pct=0.10, min_rel_vol=0.0)
+        strategy = FirstDipStrategy(float_fetcher=ff,  min_rel_vol=0.0)
         today_bars = _today_bars(open_price=11.5)
         today_df = _make_df(today_bars)
         df = _make_df(_prior_bars(prev_close=10.0) + today_bars)

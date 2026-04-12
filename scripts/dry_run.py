@@ -25,7 +25,7 @@ from config.settings import Settings
 from logging_config.setup import configure_logging
 from market_data.float_filter import FloatFetcher
 from market_data.history import HistoricalDataFetcher
-from market_data.screener import TopMoversScreener
+from market_data.screener import GapScreener
 from strategy.first_dip import FirstDipStrategy
 from strategy.momentum import MomentumStrategy
 from strategy.models import Direction
@@ -81,10 +81,10 @@ def preflight(settings: Settings) -> AlpacaClient | None:
 
     # 1c. Screener
     try:
-        screener = TopMoversScreener(client=client, settings=settings)
-        movers = screener.get_top_movers()
+        screener = GapScreener(client=client, settings=settings)
+        movers = screener.get_gappers()
         symbols = [m.symbol for m in movers]
-        print(f"{PASS}  Screener — top {len(movers)} movers: {symbols}")
+        print(f"{PASS}  Screener — {len(movers)} gappers: {symbols}")
     except BrokerError as exc:
         print(f"{FAIL}  Screener — {exc}")
         return None
@@ -133,13 +133,13 @@ def pipeline(client: AlpacaClient, settings: Settings) -> None:
     section("2 / Pipeline simulation  [DRY RUN — no orders placed]")
 
     account  = client.get_account()
-    screener = TopMoversScreener(client=client, settings=settings)
-    movers   = screener.get_top_movers()
+    screener = GapScreener(client=client, settings=settings)
+    movers   = screener.get_gappers()
 
     fetcher       = HistoricalDataFetcher(client=client)
     float_fetcher = FloatFetcher()
     strategies    = [
-        FirstDipStrategy(float_fetcher=None, min_gap_pct=0.10, min_rel_vol=2.0),
+        FirstDipStrategy(float_fetcher=None,  min_rel_vol=2.0),
         MomentumStrategy(rsi_oversold=settings.rsi_oversold),
     ]
 
