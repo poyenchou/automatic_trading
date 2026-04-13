@@ -112,7 +112,7 @@ class FirstDipStrategy(Strategy):
                 )
 
         # ── Gate 2: Relative volume ──────────────────────────────────────────
-        rel_vol = relative_volume(today_df, lookback_bars=20)
+        rel_vol = relative_volume(df, today_df)
         if rel_vol < self._min_rel_vol:
             return none(
                 f"relative volume {rel_vol:.2f}x below minimum {self._min_rel_vol:.1f}x"

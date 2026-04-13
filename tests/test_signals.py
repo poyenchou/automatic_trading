@@ -180,20 +180,86 @@ class TestGapPercent:
             gap_percent(100.0, 0.0)
 
 
+def _multi_day_ohlcv(
+    days: int,
+    bars_per_day: int = 3,
+    base_volume: float = 100.0,
+    today_volume: float = 100.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Build (df, today_df) with UTC-indexed bars at regular-hours timestamps.
+
+    Prior days all have `base_volume` for every bar.
+    Today's bars use `today_volume`.
+    The first bar of each day is at 09:30 ET; subsequent bars are +5 min apart.
+    """
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+
+    rows = []
+    # Prior days
+    for d in range(days - 1):
+        date = pd.Timestamp("2026-01-05", tz=ET) + pd.Timedelta(days=d)
+        for b in range(bars_per_day):
+            ts = date.replace(hour=9, minute=30) + pd.Timedelta(minutes=5 * b)
+            rows.append({"timestamp": ts.tz_convert("UTC"), "open": 10.0, "high": 10.0,
+                         "low": 10.0, "close": 10.0, "volume": base_volume})
+    # Today
+    today_date = pd.Timestamp("2026-01-05", tz=ET) + pd.Timedelta(days=days - 1)
+    today_rows = []
+    for b in range(bars_per_day):
+        ts = today_date.replace(hour=9, minute=30) + pd.Timedelta(minutes=5 * b)
+        row = {"timestamp": ts.tz_convert("UTC"), "open": 10.0, "high": 10.0,
+               "low": 10.0, "close": 10.0, "volume": today_volume}
+        rows.append(row)
+        today_rows.append(row)
+
+    df = pd.DataFrame(rows).set_index("timestamp")
+    today_df = pd.DataFrame(today_rows).set_index("timestamp")
+    return df, today_df
+
+
 class TestRelativeVolume:
     def test_double_volume_returns_two(self):
-        volumes = [100.0] * 20 + [200.0]
-        df = _ohlcv([10.0] * 21, volumes=volumes)
-        assert relative_volume(df, lookback_bars=20) == pytest.approx(2.0)
-
-    def test_insufficient_history_returns_zero(self):
-        df = _ohlcv([10.0] * 5)
-        assert relative_volume(df, lookback_bars=20) == 0.0
+        df, today_df = _multi_day_ohlcv(days=5, base_volume=100.0, today_volume=200.0)
+        assert relative_volume(df, today_df) == pytest.approx(2.0)
 
     def test_equal_volume_returns_one(self):
-        volumes = [100.0] * 21
-        df = _ohlcv([10.0] * 21, volumes=volumes)
-        assert relative_volume(df, lookback_bars=20) == pytest.approx(1.0)
+        df, today_df = _multi_day_ohlcv(days=5, base_volume=100.0, today_volume=100.0)
+        assert relative_volume(df, today_df) == pytest.approx(1.0)
+
+    def test_insufficient_prior_days_returns_zero(self):
+        # Only 1 prior day — needs at least 2
+        df, today_df = _multi_day_ohlcv(days=2, base_volume=100.0, today_volume=200.0)
+        assert relative_volume(df, today_df) == 0.0
+
+    def test_empty_today_df_returns_zero(self):
+        df, today_df = _multi_day_ohlcv(days=5)
+        assert relative_volume(df, today_df.iloc[0:0]) == 0.0
+
+    def test_uses_same_time_of_day(self):
+        """Only bars at the same time-of-day should count toward the average."""
+        # 3 prior days, 3 bars/day. Only the 09:30 bar matters (today_df last bar is 09:30).
+        # Set 09:30 vol=100, 09:35 vol=999 in prior days — should not affect result.
+        from zoneinfo import ZoneInfo
+        ET = ZoneInfo("America/New_York")
+        rows = []
+        for d in range(3):
+            date = pd.Timestamp("2026-01-05", tz=ET) + pd.Timedelta(days=d)
+            for b, vol in enumerate([100.0, 999.0, 999.0]):
+                ts = date.replace(hour=9, minute=30) + pd.Timedelta(minutes=5 * b)
+                rows.append({"timestamp": ts.tz_convert("UTC"), "open": 10.0, "high": 10.0,
+                              "low": 10.0, "close": 10.0, "volume": vol})
+        # Today: just one 09:30 bar with volume=200
+        today_date = pd.Timestamp("2026-01-05", tz=ET) + pd.Timedelta(days=3)
+        today_ts = today_date.replace(hour=9, minute=30).tz_convert("UTC")
+        today_row = {"timestamp": today_ts, "open": 10.0, "high": 10.0,
+                     "low": 10.0, "close": 10.0, "volume": 200.0}
+        rows.append(today_row)
+        df = pd.DataFrame(rows).set_index("timestamp")
+        today_df = pd.DataFrame([today_row]).set_index("timestamp")
+        # Average of three 09:30 bars = 100 → rel_vol = 200/100 = 2.0
+        assert relative_volume(df, today_df) == pytest.approx(2.0)
 
 
 class TestFirstDipSignal:

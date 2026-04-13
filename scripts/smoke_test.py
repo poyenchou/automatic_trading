@@ -163,7 +163,7 @@ def main() -> None:
         today_df = df[idx_et.date == last_date]
 
         vwap_series = vwap(today_df)
-        rel_vol     = relative_volume(today_df, lookback_bars=20)
+        rel_vol     = relative_volume(df, today_df)
         dip_signal  = first_dip_signal(today_df, ema_period=9)
 
         # gap percent: most recent session's open vs the prior session's last close
@@ -187,8 +187,8 @@ def main() -> None:
         verify_df.index            = verify_df.index.tz_convert(ET)
 
         print(f"\n  Most recent session: {last_date}  ({len(today_df)} bars)")
-        print(f"  TO VERIFY relative_volume: compare 'volume' of each bar to the")
-        print(f"  average of the 20 bars before it. Current bar rel_vol = {rel_vol:.2f}x")
+        print(f"  TO VERIFY relative_volume: compare today's 9:30 bar volume to the")
+        print(f"  average 9:30 bar volume over the prior 10 sessions. rel_vol = {rel_vol:.2f}x")
         print(f"\n  TO VERIFY first_dip_signal: look for the pattern below —")
         print(f"    1. above_support=True appears (the surge)")
         print(f"    2. dip_low=True on the FIRST bar that touches support")

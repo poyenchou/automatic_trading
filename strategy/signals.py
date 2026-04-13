@@ -150,29 +150,66 @@ def gap_percent(open_price: float, prev_close: float) -> float:
     return (open_price - prev_close) / prev_close
 
 
-def relative_volume(df: pd.DataFrame, lookback_bars: int = 20) -> float:
+def relative_volume(
+    df: pd.DataFrame,
+    today_df: pd.DataFrame,
+    lookback_days: int = 10,
+) -> float:
     """
-    Relative volume of the most recent bar vs the rolling average.
+    Relative volume of the most recent bar vs the same time-of-day average
+    across prior sessions.
 
-    Used as a catalyst filter: Ross Cameron requires significantly elevated
-    volume (typically > 2x) confirming that news or momentum is driving the
-    move rather than a random gap.
+    Ross Cameron's definition: "Is today's 9:35 AM bar busier than a typical
+    9:35 AM bar?" This requires cross-day history — comparing within today's
+    session only is meaningless during the first ~100 minutes of trading.
+
+    Algorithm:
+      1. Find the time-of-day of the last bar in today_df (e.g. 09:35 ET).
+      2. Find all bars at that same time across the prior `lookback_days`
+         sessions in df.
+      3. Return today's volume / mean of those historical bars.
 
     Args:
-        df:             Intraday OHLCV DataFrame (volume column required).
-                        Must contain at least `lookback_bars + 1` rows.
-        lookback_bars:  Number of prior bars used to compute the average.
+        df:            Full history DataFrame (UTC index, regular hours only).
+                       Used for cross-day lookback.
+        today_df:      Current session bars only (subset of df).
+                       The last bar is the one being evaluated.
+        lookback_days: Number of prior trading days to average (default 10).
 
     Returns:
-        Ratio of the last bar's volume to the rolling mean of the prior
-        `lookback_bars` bars.  Returns 0.0 if insufficient history.
+        Ratio of the current bar's volume to the historical same-time average.
+        Returns 0.0 if fewer than 2 prior days have data for that time slot.
     """
-    if len(df) < lookback_bars + 1:
+    if today_df.empty:
         return 0.0
-    avg = df["volume"].iloc[-(lookback_bars + 1):-1].mean()
+
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+
+    # Time-of-day of the bar we're evaluating
+    last_bar = today_df.index[-1]
+    last_bar_time = last_bar.tz_convert(ET).time()
+    current_volume = float(today_df["volume"].iloc[-1])
+
+    # Today's date to exclude from the lookback
+    today_date = last_bar.tz_convert(ET).date()
+
+    # Find same-time bars from prior sessions in df
+    idx_et = df.index.tz_convert(ET)
+    same_time_mask = (idx_et.time == last_bar_time) & (idx_et.date < today_date)
+    prior_bars = df[same_time_mask]["volume"]
+
+    # Limit to the most recent lookback_days sessions
+    prior_bars = prior_bars.iloc[-lookback_days:]
+
+    if len(prior_bars) < 2:
+        return 0.0
+
+    avg = prior_bars.mean()
     if avg == 0:
         return 0.0
-    return float(df["volume"].iloc[-1] / avg)
+
+    return float(current_volume / avg)
 
 
 def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> bool:
