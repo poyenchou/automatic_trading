@@ -21,6 +21,9 @@ from config.settings import Settings
 
 log = structlog.get_logger(__name__)
 
+_MAX_RETRIES    = 3
+_RETRY_BACKOFF  = (1.0, 2.0, 4.0)   # seconds between retries
+
 
 class AlpacaClient:
     def __init__(self, settings: Settings, auth: AlpacaAuth) -> None:
@@ -224,22 +227,49 @@ class AlpacaClient:
     # ------------------------------------------------------------------
 
     def _get_trading(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        time.sleep(0.1)  # 100ms between requests ≈ 10 req/s max
-        log.debug("http.get", client="trading", path=path)
-        resp = self._trading_http.get(path, params=params)
-        return self._handle_response(resp)
+        return self._get_with_retry(self._trading_http, "trading", path, params)
 
     def _get_data(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        time.sleep(0.1)
-        log.debug("http.get", client="data", path=path)
-        resp = self._data_http.get(path, params=params)
-        return self._handle_response(resp)
+        return self._get_with_retry(self._data_http, "data", path, params)
 
     def _post_trading(self, path: str, body: dict[str, Any] | None = None) -> Any:
         time.sleep(0.1)
         log.debug("http.post", client="trading", path=path)
         resp = self._trading_http.post(path, json=body or {})
         return self._handle_response(resp)
+
+    def _get_with_retry(
+        self,
+        http_client: httpx.Client,
+        client_name: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        """GET with retry on transient failures (timeout, 5xx)."""
+        last_exc: Exception = RuntimeError("no attempts made")
+        for attempt in range(_MAX_RETRIES):
+            time.sleep(0.1)
+            log.debug("http.get", client=client_name, path=path, attempt=attempt)
+            try:
+                resp = http_client.get(path, params=params)
+                return self._handle_response(resp)
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                log.warning(
+                    "http.timeout",
+                    client=client_name, path=path,
+                    attempt=attempt, retrying=attempt < _MAX_RETRIES - 1,
+                )
+            except GatewayError as exc:
+                last_exc = exc
+                log.warning(
+                    "http.gateway_error",
+                    client=client_name, path=path,
+                    attempt=attempt, retrying=attempt < _MAX_RETRIES - 1,
+                )
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_BACKOFF[attempt])
+        raise GatewayError(f"Request failed after {_MAX_RETRIES} attempts: {last_exc}", status_code=0)
 
     def _handle_response(self, resp: httpx.Response) -> Any:
         log.debug("http.response", status=resp.status_code, url=str(resp.url))

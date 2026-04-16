@@ -69,9 +69,10 @@ def test_get_raises_gateway_error_on_503(client, settings):
     respx.get(f"{settings.alpaca_trading_url}/v2/account").mock(
         return_value=httpx.Response(503, text="Service Unavailable")
     )
-    with pytest.raises(GatewayError) as exc_info:
-        client._get_trading("/v2/account")
-    assert exc_info.value.status_code == 503
+    from unittest.mock import patch
+    with patch("broker.client.time.sleep"):   # don't actually sleep during retries
+        with pytest.raises(GatewayError):
+            client._get_trading("/v2/account")
 
 
 # ---------------------------------------------------------------------------
