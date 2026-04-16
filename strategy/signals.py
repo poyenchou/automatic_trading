@@ -212,7 +212,7 @@ def relative_volume(
     return float(current_volume / avg)
 
 
-def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> bool:
+def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> tuple[bool, float | None]:
     """
     Detect the Ross Cameron "first dip" buy setup.
 
@@ -231,10 +231,13 @@ def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> bool:
                     (Ross Cameron uses 9 EMA on 1-min/5-min charts).
 
     Returns:
-        True if the first-dip buy setup is active on the latest bar.
+        Tuple of (signal_fired, dip_candle_low):
+          - signal_fired:    True if the first-dip buy setup is active on the latest bar.
+          - dip_candle_low:  The low of the dip candle (current bar low) when signal
+                             fires; None otherwise. Used to set chart-based stop-loss.
     """
     if len(df) < 3:
-        return False
+        return False, None
 
     vwap_series = vwap(df)
     ema_series = ema(df["close"], ema_period)
@@ -249,7 +252,7 @@ def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> bool:
     # Condition 1: at least one prior bar closed above support (the surge)
     surged = (prior > prior_support).any()
     if not surged:
-        return False
+        return False, None
 
     # Condition 3: no prior bar already dipped to/below support AND recovered
     # A completed dip = a bar that was <= support followed by a bar > support
@@ -258,17 +261,19 @@ def first_dip_signal(df: pd.DataFrame, ema_period: int = 9) -> bool:
     # Shift above by 1 to check if the bar AFTER a dip recovered
     recovered_after_dip = (below & above.shift(-1, fill_value=False))
     if recovered_after_dip.any():
-        return False
+        return False, None
 
     # Condition 2 + 4: current bar dipped to/below support but closes at/above
     current_close = close.iloc[-1]
-    current_low = df["low"].iloc[-1]
+    current_low = float(df["low"].iloc[-1])
     current_support = support.iloc[-1]
 
     dipped = current_low <= current_support
     reclaimed = current_close >= current_support
 
-    return bool(dipped and reclaimed)
+    if dipped and reclaimed:
+        return True, current_low
+    return False, None
 
 
 def in_prime_window(ts: pd.Timestamp, tz: datetime.tzinfo) -> bool:

@@ -13,13 +13,16 @@ from dataclasses import dataclass
 class OrderRequest:
     """Describes an order we want to place.
 
-    stop_price and take_profit_price are intentionally absent — they cannot
-    be known before the market order fills.  OrderManager.execute() recomputes
-    them from the actual fill price before placing the bracket orders.
+    take_profit_price is absent — it is always computed by OrderManager.execute()
+    from the actual fill price (2:1 R/R relative to stop distance).
+
+    stop_price is optional: when provided (chart-based stop from strategy), it
+    overrides the fixed stop_loss_cents setting. When None, the fixed setting is used.
     """
     symbol: str
-    qty: int           # whole shares
-    entry_price: float # pre-fill estimate; used only as fallback if fill price is unavailable
+    qty: int                        # whole shares
+    entry_price: float              # pre-fill estimate; used only as fallback if fill price unavailable
+    stop_price: float | None = None # chart-based stop (dip_low − buffer); None → use fixed cents
 
 
 @dataclass(frozen=True)

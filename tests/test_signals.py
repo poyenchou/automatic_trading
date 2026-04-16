@@ -280,18 +280,25 @@ class TestFirstDipSignal:
             {"open": closes, "high": highs, "low": lows, "close": closes, "volume": vols}
         )
 
-    def test_returns_bool(self):
+    def test_returns_tuple(self):
         df = self._make_first_dip_df()
-        assert isinstance(first_dip_signal(df), bool)
+        result = first_dip_signal(df)
+        assert isinstance(result, tuple) and len(result) == 2
+        signal, dip_low = result
+        assert isinstance(signal, bool)
 
     def test_too_few_bars_returns_false(self):
         df = _ohlcv([10.0, 20.0])
-        assert first_dip_signal(df) is False
+        signal, dip_low = first_dip_signal(df)
+        assert signal is False
+        assert dip_low is None
 
     def test_no_prior_surge_returns_false(self):
         # All bars at the same level — price never surged above support
         df = _ohlcv([10.0] * 5)
-        assert first_dip_signal(df) is False
+        signal, dip_low = first_dip_signal(df)
+        assert signal is False
+        assert dip_low is None
 
     def test_second_dip_returns_false(self):
         """
@@ -305,15 +312,28 @@ class TestFirstDipSignal:
         df = pd.DataFrame(
             {"open": closes, "high": highs, "low": lows, "close": closes, "volume": vols}
         )
-        assert first_dip_signal(df) is False
+        signal, dip_low = first_dip_signal(df)
+        assert signal is False
+        assert dip_low is None
 
     def test_first_dip_setup_detected(self):
         df = self._make_first_dip_df()
-        # This is a borderline constructed case; the key assertion is that the
-        # function runs without error and returns a bool (True/False both valid
-        # depending on exact VWAP/EMA levels with this small dataset).
-        result = first_dip_signal(df)
-        assert isinstance(result, bool)
+        signal, dip_low = first_dip_signal(df)
+        # This is a borderline constructed case; signal may be True or False
+        # depending on exact VWAP/EMA levels — key assertion is no crash + correct types.
+        assert isinstance(signal, bool)
+        if signal:
+            assert isinstance(dip_low, float)
+        else:
+            assert dip_low is None
+
+    def test_signal_fired_dip_low_is_float(self):
+        """When signal fires, dip_low must be a float (the bar's low price)."""
+        df = self._make_first_dip_df()
+        signal, dip_low = first_dip_signal(df)
+        if signal:
+            assert dip_low is not None
+            assert dip_low <= df["close"].iloc[-1]  # dip low is below or at close
 
 
 class TestInPrimeWindow:

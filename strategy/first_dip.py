@@ -130,10 +130,14 @@ class FirstDipStrategy(Strategy):
         if len(today_df) < MIN_BARS_TODAY:
             return none(f"insufficient session bars: {len(today_df)} < {MIN_BARS_TODAY}")
 
-        dip    = first_dip_signal(today_df, ema_period=self._ema_period)
+        dip, dip_low = first_dip_signal(today_df, ema_period=self._ema_period)
         breakout = opening_range_breakout(today_df, range_bars=self._range_bars)
 
+        # Chart-based stop: just below the dip candle low (5-cent buffer)
+        _STOP_BUFFER = 0.05
+
         if dip:
+            stop_price = round(dip_low - _STOP_BUFFER, 2) if dip_low is not None else None
             return SignalResult(
                 symbol=symbol,
                 direction=Direction.BUY,
@@ -142,6 +146,8 @@ class FirstDipStrategy(Strategy):
                     f"rel_vol={rel_vol:.2f}x, "
                     f"price reclaimed VWAP/EMA({self._ema_period})"
                 ),
+                dip_low=dip_low,
+                stop_price=stop_price,
             )
 
         if breakout:

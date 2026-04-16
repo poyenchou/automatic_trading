@@ -153,7 +153,9 @@ class MorningWorkflow:
                 # BUY — place order immediately
                 try:
                     current_price = float(df["close"].iloc[-1])
-                    request = self._order_manager.build_order_request(symbol, current_price)
+                    request = self._order_manager.build_order_request(
+                        symbol, current_price, stop_price=signal.stop_price
+                    )
                     state   = self._order_manager.execute(request)
                     positions.append((symbol, signal, state))
                     traded.add(symbol)

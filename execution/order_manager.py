@@ -3,9 +3,9 @@ OrderManager — sizes and places orders with stop-loss and take-profit brackets
 
 Position sizing:
   - Risk a fixed % of account equity per trade (e.g. 1%)
-  - Stop = fixed cents below entry price (e.g. $0.10)
+  - Stop = chart-based (dip_low − buffer) when provided; else fixed cents from settings
   - qty = (equity * risk_pct) / stop_distance
-  - Take profit = entry + 2 * stop_distance  (2:1 R/R)
+  - Take profit = fill_price + 2 * (fill_price − stop_price)  (2:1 R/R)
   - Capped at settings.max_shares
 
 Entry flow:
@@ -48,22 +48,34 @@ class OrderManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def build_order_request(self, symbol: str, current_price: float) -> OrderRequest:
+    def build_order_request(
+        self,
+        symbol: str,
+        current_price: float,
+        stop_price: float | None = None,
+    ) -> OrderRequest:
         """
         Compute order parameters from account equity and settings.
 
         Args:
             symbol:        Stock ticker.
             current_price: Current ask/last price used to estimate entry.
+            stop_price:    Chart-based stop level from strategy (optional).
+                           When provided, stop distance = current_price − stop_price.
+                           When None, stop distance = settings.stop_loss_cents.
 
         Returns:
             OrderRequest with qty computed from account equity.
-            Bracket prices (stop/TP) are computed later from the actual fill price.
+            TP is computed later from the actual fill price.
         """
-        account       = self._client.get_account()
-        equity        = account.equity
-        stop_distance = self._settings.stop_loss_cents
-        risk_dollars  = equity * self._settings.risk_per_trade_pct
+        account      = self._client.get_account()
+        equity       = account.equity
+        risk_dollars = equity * self._settings.risk_per_trade_pct
+
+        if stop_price is not None:
+            stop_distance = max(current_price - stop_price, self._settings.stop_loss_cents)
+        else:
+            stop_distance = self._settings.stop_loss_cents
 
         qty = int(risk_dollars / stop_distance)
         qty = max(1, min(qty, self._settings.max_shares))
@@ -73,6 +85,8 @@ class OrderManager:
             symbol=symbol,
             equity=equity,
             risk_dollars=risk_dollars,
+            stop_distance=stop_distance,
+            chart_stop=stop_price,
             qty=qty,
         )
 
@@ -80,6 +94,7 @@ class OrderManager:
             symbol=symbol,
             qty=qty,
             entry_price=current_price,
+            stop_price=stop_price,
         )
 
     def execute(self, request: OrderRequest) -> PositionState:
@@ -104,9 +119,15 @@ class OrderManager:
         fill_status = self._wait_for_fill(entry_order.id)
         fill_price  = fill_status.filled_avg_price or request.entry_price
 
-        # Recompute TP/SL from actual fill price
-        stop_price        = round(fill_price - self._settings.stop_loss_cents, 2)
-        take_profit_price = round(fill_price + 2 * self._settings.stop_loss_cents, 2)
+        # Stop: use chart-based level when available, else fixed cents below fill
+        if request.stop_price is not None:
+            stop_price = round(request.stop_price, 2)
+        else:
+            stop_price = round(fill_price - self._settings.stop_loss_cents, 2)
+
+        # TP: always 2:1 R/R relative to the actual stop distance from fill
+        stop_distance     = fill_price - stop_price
+        take_profit_price = round(fill_price + 2 * stop_distance, 2)
 
         log.info(
             "order_manager.filled",

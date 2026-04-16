@@ -142,3 +142,40 @@ class TestExecute:
         assert state.symbol == "X"
         assert state.stop_order_id == "stop-1"
         assert state.tp_order_id == "tp-1"
+
+    def test_chart_stop_used_when_provided(self):
+        # Fill at 10.50, chart stop at 10.20 → stop_distance=0.30, TP=10.50+0.60=11.10
+        client = _mock_client(fill_price=10.50)
+        om = OrderManager(client, _settings(stop_loss_cents=0.10))
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0, stop_price=10.20)
+        state = om.execute(req)
+        assert state.stop_price == pytest.approx(10.20)
+        assert state.take_profit_price == pytest.approx(11.10)
+
+    def test_fixed_stop_used_when_no_chart_stop(self):
+        # Fill at 10.50, no chart stop → stop = 10.50 - 0.10 = 10.40, TP = 10.70
+        client = _mock_client(fill_price=10.50)
+        om = OrderManager(client, _settings(stop_loss_cents=0.10))
+        req = OrderRequest(symbol="X", qty=100, entry_price=10.0, stop_price=None)
+        state = om.execute(req)
+        assert state.stop_price == pytest.approx(10.40)
+        assert state.take_profit_price == pytest.approx(10.70)
+
+
+class TestBuildOrderRequestWithChartStop:
+    def test_chart_stop_sizes_position_correctly(self):
+        # equity=10000, risk=1% → $100, chart stop distance=0.50 → qty=200
+        client = _mock_client(equity=10_000.0)
+        om = OrderManager(client, _settings(risk_per_trade_pct=0.01, stop_loss_cents=0.10))
+        req = om.build_order_request("X", current_price=10.50, stop_price=10.00)
+        assert req.qty == 200  # 100 / 0.50 = 200
+        assert req.stop_price == pytest.approx(10.00)
+
+    def test_chart_stop_distance_floored_at_min_cents(self):
+        # stop_price > current_price is impossible but chart stop very close to price
+        # should not produce zero or negative stop distance — floor at stop_loss_cents
+        client = _mock_client(equity=10_000.0)
+        om = OrderManager(client, _settings(risk_per_trade_pct=0.01, stop_loss_cents=0.10))
+        # current_price=10.50, stop_price=10.49 → distance=0.01 < min 0.10 → use 0.10
+        req = om.build_order_request("X", current_price=10.50, stop_price=10.49)
+        assert req.qty == 1000  # 100 / 0.10 = 1000 (min cents floor kicks in)

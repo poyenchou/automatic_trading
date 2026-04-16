@@ -169,3 +169,41 @@ class TestFirstDipStrategyReturnsSignalResult:
         df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
         strategy.generate_signal("MEME", df, today_df)
         ff.is_low_float.assert_called_once_with("MEME", max_float=20_000_000)
+
+
+class TestFirstDipStrategyChartStop:
+    """When a BUY fires via first_dip, stop_price should reflect the dip candle low."""
+
+    def test_buy_via_first_dip_has_stop_price(self):
+        strategy = FirstDipStrategy(float_fetcher=None, min_rel_vol=0.0)
+        today_bars = _today_bars(open_price=11.5)
+        today_df = _make_df(today_bars)
+        df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
+        result = strategy.generate_signal("X", df, today_df)
+        if result.direction.value == "BUY" and "first dip" in result.reason:
+            assert result.stop_price is not None
+            assert result.dip_low is not None
+            assert result.stop_price < result.dip_low      # stop is below dip low
+            assert result.dip_low - result.stop_price == pytest.approx(0.05, abs=0.01)  # 5-cent buffer
+
+    def test_buy_via_breakout_has_no_stop_price(self):
+        """Opening range breakout signals don't carry a chart stop."""
+        strategy = FirstDipStrategy(float_fetcher=None, min_rel_vol=0.0)
+        # Only 2 bars → not enough for first_dip (needs >= 3) but enough for breakout
+        today_bars = [
+            _bar(_ts("09:30"), 11.5, 12.0, 11.0, 11.8, 3_000_000.0),
+            _bar(_ts("09:35"), 11.8, 13.0, 11.8, 12.5, 3_000_000.0),  # closes above opening high
+        ]
+        today_df = _make_df(today_bars)
+        df = _make_df(_prior_bars(prev_close=10.0) + today_bars)
+        result = strategy.generate_signal("X", df, today_df)
+        if result.direction.value == "BUY" and "breakout" in result.reason:
+            assert result.stop_price is None
+            assert result.dip_low is None
+
+    def test_none_signal_has_no_stop_price(self, strategy_no_float, full_df):
+        today_df = _make_df(_today_bars(volume_mult=0.1))  # low volume → NONE
+        result = strategy_no_float.generate_signal("X", full_df, today_df)
+        assert result.direction.value == "NONE"
+        assert result.stop_price is None
+        assert result.dip_low is None
