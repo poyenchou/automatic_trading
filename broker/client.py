@@ -32,12 +32,12 @@ class AlpacaClient:
         self._trading_http = httpx.Client(
             base_url=settings.alpaca_trading_url,
             headers=auth.headers(),
-            timeout=30.0,
+            timeout=10.0,
         )
         self._data_http = httpx.Client(
             base_url=settings.alpaca_data_url,
             headers=auth.headers(),
-            timeout=30.0,
+            timeout=10.0,
         )
 
     # ------------------------------------------------------------------
@@ -259,6 +259,14 @@ class AlpacaClient:
                     "http.timeout",
                     client=client_name, path=path,
                     attempt=attempt, retrying=attempt < _MAX_RETRIES - 1,
+                )
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                log.warning(
+                    "http.connect_error",
+                    client=client_name, path=path,
+                    attempt=attempt, retrying=attempt < _MAX_RETRIES - 1,
+                    error=str(exc),
                 )
             except GatewayError as exc:
                 last_exc = exc

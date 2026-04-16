@@ -75,6 +75,17 @@ def test_get_raises_gateway_error_on_503(client, settings):
             client._get_trading("/v2/account")
 
 
+@respx.mock
+def test_get_raises_gateway_error_on_connect_error(client, settings):
+    respx.get(f"{settings.alpaca_trading_url}/v2/account").mock(
+        side_effect=httpx.ConnectError("nodename nor servname provided, or not known")
+    )
+    from unittest.mock import patch
+    with patch("broker.client.time.sleep"):   # don't actually sleep during retries
+        with pytest.raises(GatewayError):
+            client._get_trading("/v2/account")
+
+
 # ---------------------------------------------------------------------------
 # get_account
 # ---------------------------------------------------------------------------
