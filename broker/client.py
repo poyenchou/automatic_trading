@@ -29,15 +29,16 @@ class AlpacaClient:
     def __init__(self, settings: Settings, auth: AlpacaAuth) -> None:
         self._settings = settings
         self._auth = auth
+        _timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
         self._trading_http = httpx.Client(
             base_url=settings.alpaca_trading_url,
             headers=auth.headers(),
-            timeout=10.0,
+            timeout=_timeout,
         )
         self._data_http = httpx.Client(
             base_url=settings.alpaca_data_url,
             headers=auth.headers(),
-            timeout=10.0,
+            timeout=_timeout,
         )
 
     # ------------------------------------------------------------------
