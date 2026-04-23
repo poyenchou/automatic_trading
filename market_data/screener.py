@@ -82,7 +82,7 @@ class GapScreener:
 
                 prev_close  = prev_bar.get("c")
                 daily_open  = daily_bar.get("o")
-                volume      = daily_bar.get("v", 0.0)
+                volume      = prev_bar.get("v", 0.0)   # yesterday's full-day volume
                 price       = latest.get("p") or daily_bar.get("c") or daily_open
 
                 if not prev_close or not daily_open or prev_close <= 0:

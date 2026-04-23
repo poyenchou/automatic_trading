@@ -21,8 +21,8 @@ def screener(mock_client, settings) -> GapScreener:
 
 def _make_snap(prev_close: float, daily_open: float, latest_price: float, volume: float = 1_000_000) -> dict:
     return {
-        "prevDailyBar": {"c": prev_close},
-        "dailyBar":     {"o": daily_open, "c": daily_open, "v": volume},
+        "prevDailyBar": {"c": prev_close, "v": volume},   # yesterday's full-day volume
+        "dailyBar":     {"o": daily_open, "c": daily_open, "v": volume / 10},  # today's partial
         "latestTrade":  {"p": latest_price},
     }
 
