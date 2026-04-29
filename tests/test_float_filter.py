@@ -49,10 +49,10 @@ class TestIsLowFloat:
         with patch("market_data.float_filter.yf.Ticker", return_value=_mock_ticker(50_000_000)):
             assert fetcher.is_low_float("XYZ") is False
 
-    def test_no_data_returns_false(self, fetcher):
-        # Conservative: skip the symbol if we can't determine float
+    def test_no_data_returns_true(self, fetcher):
+        # Unknown float → allow through (likely small-cap, too new for yfinance)
         with patch("market_data.float_filter.yf.Ticker", return_value=_mock_ticker(None)):
-            assert fetcher.is_low_float("XYZ") is False
+            assert fetcher.is_low_float("XYZ") is True
 
     def test_custom_threshold(self, fetcher):
         with patch("market_data.float_filter.yf.Ticker", return_value=_mock_ticker(8_000_000)):

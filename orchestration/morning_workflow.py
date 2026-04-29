@@ -34,7 +34,7 @@ from config.settings import Settings
 from execution.models import PositionState
 from execution.order_manager import OrderManager
 from execution.position_monitor import PositionMonitor
-from market_data.float_filter import DEFAULT_MAX_FLOAT, FloatFetcher
+from market_data.float_filter import FloatFetcher
 from market_data.history import HistoricalDataFetcher
 from market_data.screener import GapScreener
 from strategy.base import Strategy
@@ -98,17 +98,18 @@ class MorningWorkflow:
             if self._float_fetcher is not None:
                 float_shares = self._float_fetcher.get_float_shares(symbol)
                 actual_str = f"{float_shares / 1_000_000:.1f}M" if float_shares is not None else "unknown"
-                if float_shares is None or float_shares > DEFAULT_MAX_FLOAT:
+                max_float = self._settings.first_dip_max_float
+                if float_shares is not None and float_shares > max_float:
                     log.info(
                         "workflow.float_filter.skip",
                         symbol=symbol,
                         actual_float=actual_str,
-                        max_float=f"{DEFAULT_MAX_FLOAT / 1_000_000:.0f}M",
+                        max_float=f"{max_float / 1_000_000:.0f}M",
                     )
                     results.append(TradeResult(
                         symbol=symbol, signal=_none_signal(symbol),
                         outcome="skipped",
-                        reason=f"float {actual_str} above maximum {DEFAULT_MAX_FLOAT / 1_000_000:.0f}M shares",
+                        reason=f"float {actual_str} above maximum {max_float / 1_000_000:.0f}M shares",
                     ))
                     continue
             candidates.append(symbol)

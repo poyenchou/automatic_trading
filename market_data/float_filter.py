@@ -65,5 +65,5 @@ class FloatFetcher:
         shares = self.get_float_shares(symbol)
         if shares is None:
             log.warning("float_filter.is_low_float.no_data", symbol=symbol)
-            return False
+            return True  # unknown float → allow through (likely small-cap)
         return shares <= max_float

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     paper_trading: bool = True
 
     # ── Screener (GapScreener — runs once at startup) ─────────────────────────
-    gap_min_pct: float = 0.10          # minimum gap up % to qualify (0.10 = 10%)
+    gap_min_pct: float = 0.05          # minimum gap up % to qualify (0.05 = 5%)
     min_daily_volume: int = 500_000    # minimum pre-market volume (Ross Cameron: 500K–1M)
     min_stock_price: float = 1.5       # skip penny stocks below this price
     snapshot_batch_size: int = 100     # symbols per Alpaca snapshots API call
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # ── First Dip strategy (Ross Cameron Gap & Go) ────────────────────────────
     # Used by FirstDipStrategy only.
     first_dip_min_rel_vol: float = 2.0  # minimum relative volume multiplier
-    first_dip_max_float: int = 20_000_000  # maximum public float (shares)
+    first_dip_max_float: int = 200_000_000  # maximum public float (shares)
     first_dip_ema_period: int = 9          # EMA period used as support line
     first_dip_range_bars: int = 1          # opening range bar count for ORB entry
 
