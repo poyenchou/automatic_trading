@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # ── First Dip strategy (Ross Cameron Gap & Go) ────────────────────────────
     # Used by FirstDipStrategy only.
     first_dip_min_rel_vol: float = 2.0  # minimum relative volume multiplier
-    first_dip_max_float: int = 200_000_000  # maximum public float (shares)
+    first_dip_max_float: int = 500_000_000  # maximum public float (shares)
     first_dip_ema_period: int = 9          # EMA period used as support line
     first_dip_range_bars: int = 1          # opening range bar count for ORB entry
 
